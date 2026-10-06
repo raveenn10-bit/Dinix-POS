@@ -122,20 +122,29 @@
 5. මිනිත්තුවක් ඇතුළත ඔබේ නිල Live Web Domain එක (උදා: https://dinix-pos.vercel.app) 
    ලබා දෙනු ඇත! (vercel.json ගොනුව දැනටමත් සකසා ඇති බැවින් කිසිදු දෝෂයක් නොමැත).
 
-================================================================================
-4. සැබෑ GOOGLE FIREBASE CLOUD DATABASE එකට සම්බන්ධ කිරීම
+=================================================================================
+4. සැබෑ GOOGLE FIREBASE CLOUD DATABASE විස්තර (LIVE CLOUD INTEGRATION)
 ================================================================================
 
-පද්ධතිය සැබෑ Google Cloud Database එක සමඟ සම්බන්ධ කිරීමට:
-1. https://console.firebase.google.com වෙත ගොස් Web App Configuration ලබා ගන්න.
-2. .env ගොනුවේ (හෝ Vercel Environment Variables හි) අදාළ Keys ඇතුළත් කරන්න:
-   - VITE_FIREBASE_API_KEY
-   - VITE_FIREBASE_AUTH_DOMAIN
-   - VITE_FIREBASE_PROJECT_ID
-   - VITE_FIREBASE_STORAGE_BUCKET
-   - VITE_FIREBASE_MESSAGING_SENDER_ID
-   - VITE_FIREBASE_APP_ID
-3. Keys ඇතුළත් කළ සැණින් පද්ධතිය ස්වයංක්‍රීයව Live Cloud Database එකට මාරු වේ!
+පද්ධතිය Google Firebase Cloud Database එක සමඟ සාර්ථකව සම්බන්ධ කර ඇත!
+Google Cloud Project ID: danix-pos-lk-2026
+Google Account: raveenn10@gmail.com
+
+පද්ධතියේ .env ගොනුවට සහ Vercel Environment Variables සඳහා යොදන Live Keys:
+--------------------------------------------------------------------------------
+VITE_FIREBASE_API_KEY=AIzaSyDiFV21hQk6wSoiR4Jqwuiij1mGQOVBk0s
+VITE_FIREBASE_AUTH_DOMAIN=danix-pos-lk-2026.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=danix-pos-lk-2026
+VITE_FIREBASE_STORAGE_BUCKET=danix-pos-lk-2026.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=1029375514948
+VITE_FIREBASE_APP_ID=1:1029375514948:web:47ce8d97389b84c77a9f11
+VITE_FIREBASE_MEASUREMENT_ID=G-84BG2JE4JP
+
+💡 Vercel Deployment සඳහා:
+   Vercel Dashboard ➔ Project Settings ➔ "Environment Variables" වෙත ගොස් 
+   ඉහත Keys 7 එකතු කර "Save" කරන්න. එමඟින් Vercel හි පළවන Live Web App එකද 
+   සෘජුවම සැබෑ Google Cloud Database එක සමඟ Sync වේ.
+
 
 ================================================================================
 5. දෛනික භාවිතය සඳහා උපදෙස් (DAILY OPERATIONS CHECKLIST)
