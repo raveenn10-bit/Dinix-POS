@@ -989,3 +989,75 @@ export function exportToCsv(
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+// ==================== SYSTEM DATA RESET ====================
+
+export interface ClearDataOptions {
+  clearTransactions: boolean; // Orders, Invoices, Deliveries, Stock Movements, Expenses, Logs
+  clearProducts: boolean;     // Products
+  clearCustomers: boolean;    // Customers
+}
+
+export async function clearAllSystemData(
+  options: ClearDataOptions,
+  adminUser: { uid: string; name: string }
+): Promise<void> {
+  const { clearTransactions, clearProducts, clearCustomers } = options;
+
+  // 1. Clear LocalStorage keys
+  if (clearTransactions) {
+    localStorage.setItem(LS_KEYS.ORDERS, JSON.stringify([]));
+    localStorage.setItem('danix_mock_orders', JSON.stringify([]));
+    localStorage.setItem(LS_KEYS.INVOICES, JSON.stringify([]));
+    localStorage.setItem('danix_mock_invoices', JSON.stringify([]));
+    localStorage.setItem(LS_KEYS.DELIVERIES, JSON.stringify([]));
+    localStorage.setItem('danix_mock_deliveries', JSON.stringify([]));
+    localStorage.setItem(LS_KEYS.EXPENSES, JSON.stringify([]));
+    localStorage.setItem('danix_mock_stock_movements', JSON.stringify([]));
+    localStorage.setItem('danix_pos_stock_movements', JSON.stringify([]));
+    localStorage.setItem(LS_KEYS.LOGS, JSON.stringify([]));
+  }
+
+  if (clearProducts) {
+    localStorage.setItem(LS_KEYS.PRODUCTS, JSON.stringify([]));
+    localStorage.setItem('danix_mock_products', JSON.stringify([]));
+  }
+
+  if (clearCustomers) {
+    localStorage.setItem(LS_KEYS.CUSTOMERS, JSON.stringify([]));
+    localStorage.setItem('danix_mock_customers', JSON.stringify([]));
+  }
+
+  // 2. If Live Firebase is configured, clear Firestore collections
+  if (isFirebaseConfigured) {
+    try {
+      const collectionsToWipe: string[] = [];
+      if (clearTransactions) {
+        collectionsToWipe.push('orders', 'invoices', 'deliveries', 'expenses', 'stock_movements', 'activity_logs');
+      }
+      if (clearProducts) {
+        collectionsToWipe.push('products');
+      }
+      if (clearCustomers) {
+        collectionsToWipe.push('customers');
+      }
+
+      for (const colName of collectionsToWipe) {
+        const snap = await getDocs(query(collection(db, colName), limit(200)));
+        const deletePromises = snap.docs.map((d) => deleteDoc(doc(db, colName, d.id)));
+        await Promise.all(deletePromises);
+      }
+    } catch (err) {
+      console.warn('[DataService] Error clearing Firestore collections:', err);
+    }
+  }
+
+  // Log Activity for Audit
+  await logActivity(
+    'System Reset',
+    'settings',
+    'system_reset',
+    `Cleared POS data: Transactions=${clearTransactions}, Products=${clearProducts}, Customers=${clearCustomers}`,
+    adminUser
+  );
+}

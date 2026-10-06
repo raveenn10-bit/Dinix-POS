@@ -14,10 +14,14 @@ import {
   Plus,
   Trash2,
   Building,
+  AlertTriangle,
+  RotateCcw,
+  X,
+  AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
-import { fetchBusinessSettings, saveBusinessSettings } from '@/lib/dataService';
+import { fetchBusinessSettings, saveBusinessSettings, clearAllSystemData } from '@/lib/dataService';
 import { BusinessSettings } from '@/types';
 
 export const SettingsPage: React.FC = () => {
@@ -52,6 +56,48 @@ export const SettingsPage: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Data Reset States
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [clearTransactions, setClearTransactions] = useState(true);
+  const [clearProducts, setClearProducts] = useState(false);
+  const [clearCustomers, setClearCustomers] = useState(false);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleExecuteReset = async () => {
+    if (confirmInput.trim().toUpperCase() !== 'RESET') {
+      notifyError('Please type RESET in capital letters to confirm.');
+      return;
+    }
+    if (!userProfile) return;
+
+    setIsResetting(true);
+    try {
+      await clearAllSystemData(
+        {
+          clearTransactions,
+          clearProducts,
+          clearCustomers,
+        },
+        {
+          uid: userProfile.uid,
+          name: userProfile.name,
+        }
+      );
+      notifySuccess('POS system data cleared successfully!', 'System Reset');
+      setIsResetModalOpen(false);
+      setConfirmInput('');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (err) {
+      console.error(err);
+      notifyError('Failed to reset system data.', 'Error');
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -387,6 +433,36 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Danger Zone: System Data Clear / Factory Reset */}
+        {isAdmin && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-rose-950">Danger Zone: System Factory Reset</h4>
+                  <p className="text-xs text-rose-700/80 mt-0.5">
+                    Clear test orders, invoices, deliveries, and stock movement logs to start with a fresh clean slate.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmInput('');
+                  setIsResetModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-xs font-bold text-rose-600 shadow-sm hover:bg-rose-600 hover:text-white transition-all cursor-pointer whitespace-nowrap"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Reset & Clear POS Data</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Save Bar */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
@@ -403,6 +479,106 @@ export const SettingsPage: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* System Reset Confirmation Modal */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/70 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-rose-100 bg-rose-50 px-6 py-4">
+              <div className="flex items-center gap-2.5 text-rose-700">
+                <AlertTriangle className="h-5 w-5" />
+                <h3 className="text-base font-bold text-rose-950">Clear POS Data</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-rose-100 hover:text-rose-900 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Select the data categories you want to completely erase from the system. 
+                <strong className="text-rose-600 font-bold block mt-1">This action cannot be undone.</strong>
+              </p>
+
+              <div className="space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={clearTransactions}
+                    onChange={(e) => setClearTransactions(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-900 block">Orders, Invoices & Deliveries</span>
+                    <span className="text-[11px] text-slate-500">Includes stock movements, expenses, and activity logs</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer pt-2 border-t border-slate-200/60">
+                  <input
+                    type="checkbox"
+                    checked={clearProducts}
+                    onChange={(e) => setClearProducts(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-900 block">Product Catalog</span>
+                    <span className="text-[11px] text-slate-500">Deletes all existing products so you can add real products</span>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer pt-2 border-t border-slate-200/60">
+                  <input
+                    type="checkbox"
+                    checked={clearCustomers}
+                    onChange={(e) => setClearCustomers(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  <div>
+                    <span className="font-bold text-slate-900 block">Customer Records</span>
+                    <span className="text-[11px] text-slate-500">Deletes customer directory & purchase history</span>
+                  </div>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Type <span className="font-mono font-bold text-rose-600">RESET</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={confirmInput}
+                  onChange={(e) => setConfirmInput(e.target.value)}
+                  placeholder="RESET"
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono uppercase tracking-widest text-slate-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteReset}
+                  disabled={confirmInput.trim().toUpperCase() !== 'RESET' || isResetting}
+                  className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-40 transition-colors cursor-pointer"
+                >
+                  {isResetting ? 'Wiping Data...' : 'Wipe Selected Data'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
