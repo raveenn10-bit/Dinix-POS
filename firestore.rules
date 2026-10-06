@@ -208,7 +208,7 @@ service cloud.firestore {
     function isBootstrapAdmin() {
       return isAuthenticated() &&
         request.auth.token.email != null &&
-        request.auth.token.email == 'danixlkstore@gmail.com';
+        (request.auth.token.email == 'danixlkstore@gmail.com' || request.auth.token.email == 'raveenn10@gmail.com');
     }
 
     // System-wide active user verification
