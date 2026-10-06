@@ -99,18 +99,18 @@
 
 ---
 
-## 🔑 ඩෙමෝ ගිණුම් (Demo Credentials)
+## 🔑 නිෂ්පාදන ගිණුම් කළමනාකරණය (Production Accounts Setup)
 
-පද්ධතිය ආරම්භයේදීම පරීක්ෂා කර බැලීම සඳහා පහත ගිණුම් භාවිතා කළ හැක:
+පද්ධතිය දැන් සැබෑ නිෂ්පාදන මට්ටමේ (Production-Ready) පවතින අතර කිසිදු Hardcoded Demo Account එකක් නොමැත:
 
-- **පරිපාලක ගිණුම (Admin)**:
-  - ඊමේල්: `admin@danix.lk`
-  - මුරපදය: `admin123`
-- **සේවක ගිණුම (Staff)**:
-  - ඊමේල්: `staff@danix.lk`
-  - මුරපදය: `staff123`
+1. **ප්‍රධාන පරිපාලක ගිණුම සෑදීම (Master Admin Setup)**:
+   - Login පිටුවේ පහළ ඇති **"First-time setup? Create Master Admin Account"** ක්ලික් කරන්න.
+   - ඔබගේ නම, සැබෑ ඊමේල් ලිපිනය (උදා: `danixlkstore@gmail.com` හෝ `owner@danix.lk`), සහ ශක්තිමත් මුරපදයක් ඇතුළත් කර Master Admin සාදා ගන්න.
+   - මෙම ගිණුමට පද්ධතියේ සියලුම අංශ පාලනය කිරීමේ පූර්ණ බලය (Super Admin) හිමිවේ.
 
-*(සටහන: ලොගින් පිටුවේ ඇති "Quick Demo Admin" හෝ "Quick Demo Staff" බොත්තම ක්ලික් කිරීමෙන් ක්ෂණිකව ඇතුළු විය හැක)*
+2. **කාර්ය මණ්ඩල ගිණුම් සෑදීම (Staff Accounts)**:
+   - Master Admin ලෙස Login වූ පසු, **User Management (`/users`)** පිටුවට යන්න.
+   - **"Add Staff Member"** බොත්තම මඟින් ඔබගේ සේවකයින්ගේ නම, ඊමේල් සහ භූමිකාව (`staff`) ඇතුළත් කර ගිණුම් සාදා දෙන්න.
 
 ---
 

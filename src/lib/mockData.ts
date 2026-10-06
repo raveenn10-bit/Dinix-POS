@@ -965,35 +965,4 @@ export const INITIAL_SETTINGS: BusinessSettings = {
   },
 };
 
-export const INITIAL_STAFF_USERS: User[] = [
-  {
-    uid: 'demo-admin-uid',
-    name: 'Danix Super Admin',
-    email: 'admin@danix.lk',
-    role: 'admin',
-    active: true,
-    phone: '076 252 4671',
-    createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
-    updatedAt: Date.now(),
-  },
-  {
-    uid: 'demo-staff-uid',
-    name: 'Danix Counter Staff',
-    email: 'staff@danix.lk',
-    role: 'staff',
-    active: true,
-    phone: '077 456 7890',
-    createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-    updatedAt: Date.now(),
-  },
-  {
-    uid: 'user-kavindu-003',
-    name: 'Kavindu Wickramasinghe',
-    email: 'kavindu@danix.lk',
-    role: 'staff',
-    active: true,
-    phone: '071 223 3445',
-    createdAt: Date.now() - 15 * 24 * 60 * 60 * 1000,
-    updatedAt: Date.now(),
-  },
-];
+export const INITIAL_STAFF_USERS: User[] = [];

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, UserPlus, Phone, User as UserIcon } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
 
@@ -8,16 +8,30 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
-  const { login } = useAuth();
+  const { login, registerAdmin } = useAuth();
   const { notifySuccess, notifyError } = useNotification();
 
+  // Mode: 'signin' | 'setup_admin'
+  const [authMode, setAuthMode] = useState<'signin' | 'setup_admin'>('signin');
+
+  // Sign In Fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+
+  // Setup Admin Fields
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPhone, setAdminPhone] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+
+  // UI state
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -34,7 +48,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setIsLoading(true);
     try {
       await login(email, password);
-      notifySuccess('Welcome back to Danix POS!', 'Signed In');
+      notifySuccess('Welcome to Danix POS!', 'Signed In Successfully');
       if (onNavigate) {
         onNavigate('/dashboard');
       } else {
@@ -47,35 +61,62 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       if (err?.code === 'auth/user-not-found') {
         userFriendlyMsg = 'No account found with this email address.';
       } else if (err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
-        userFriendlyMsg = 'Incorrect password. Please try again.';
+        userFriendlyMsg = 'Incorrect email or password. Please try again.';
       } else if (err?.code === 'auth/invalid-email') {
-        userFriendlyMsg = 'Please provide a valid email format.';
+        userFriendlyMsg = 'Please enter a valid email format.';
       } else if (err?.code === 'auth/too-many-requests') {
-        userFriendlyMsg = 'Access temporarily locked due to too many attempts. Reset your password or try later.';
+        userFriendlyMsg = 'Access temporarily locked due to too many failed attempts. Try again later.';
+      } else if (err?.code === 'auth/api-key-not-valid') {
+        userFriendlyMsg = 'Firebase configuration is pending or invalid. Please check your .env credentials.';
       }
       setErrorMessage(userFriendlyMsg);
-      notifyError(userFriendlyMsg, 'Sign In Error');
+      notifyError(userFriendlyMsg, 'Sign In Failed');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleQuickFill = async (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
+  const handleSetupAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMessage(null);
+
+    if (!adminName.trim()) {
+      setErrorMessage('Please enter your full name.');
+      return;
+    }
+    if (!adminEmail.trim()) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (adminPassword.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long.');
+      return;
+    }
+    if (adminPassword !== adminConfirmPassword) {
+      setErrorMessage('Passwords do not match. Please recheck.');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await login(demoEmail, demoPass);
-      notifySuccess(`Signed in as ${demoEmail.includes('admin') ? 'Admin' : 'Staff'}!`, 'Demo Access');
+      await registerAdmin(adminName, adminEmail, adminPassword, adminPhone);
+      notifySuccess('Master Admin account created successfully!', 'Welcome');
       if (onNavigate) {
         onNavigate('/dashboard');
       } else {
         window.location.href = '/dashboard';
       }
-    } catch (err) {
-      console.error(err);
-      setErrorMessage('Failed to sign in with demo credentials.');
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      console.error('Setup admin error:', err);
+      let msg = 'Failed to create Master Admin account.';
+      if (err?.code === 'auth/email-already-in-use') {
+        msg = 'An account with this email already exists. Please sign in instead.';
+      } else if (err?.code === 'auth/weak-password') {
+        msg = 'Password is too weak. Please use a stronger password.';
+      }
+      setErrorMessage(msg);
+      notifyError(msg, 'Registration Error');
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +128,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-brand-500/10 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-navy-500/20 blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-md space-y-8 relative z-10">
+      <div className="w-full max-w-md space-y-6 relative z-10">
         {/* Brand Header */}
         <div className="text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-2xl ring-4 ring-brand-500/30">
@@ -101,11 +142,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             />
           </div>
 
-          <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-white">
+          <h2 className="mt-5 text-3xl font-extrabold tracking-tight text-white">
             DANIX <span className="text-brand-500">POS</span>
           </h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Trusted Online Shopping Management System
+          <p className="mt-1 text-sm text-slate-400">
+            Inventory, Invoice, Order & Delivery Management System
           </p>
         </div>
 
@@ -118,147 +159,278 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email Field */}
-            <div>
-              <label
-                htmlFor="email-input"
-                className="block text-xs font-semibold text-slate-300 uppercase tracking-wider"
-              >
-                Email Address
-              </label>
-              <div className="relative mt-2 rounded-xl shadow-sm">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-                  <Mail className="h-5 w-5" />
-                </div>
-                <input
-                  id="email-input"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@danix.lk"
-                  className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-3 pl-11 pr-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
-                />
-              </div>
-            </div>
-
-            {/* Password Field */}
-            <div>
-              <div className="flex items-center justify-between">
+          {authMode === 'signin' ? (
+            <form onSubmit={handleSignIn} className="space-y-5">
+              {/* Email Field */}
+              <div>
                 <label
-                  htmlFor="password-input"
+                  htmlFor="email-input"
                   className="block text-xs font-semibold text-slate-300 uppercase tracking-wider"
                 >
-                  Password
+                  Email Address
                 </label>
+                <div className="relative mt-2 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <Mail className="h-5 w-5" />
+                  </div>
+                  <input
+                    id="email-input"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@business.com"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-3 pl-11 pr-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Password Field */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="password-input"
+                    className="block text-xs font-semibold text-slate-300 uppercase tracking-wider"
+                  >
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onNavigate) onNavigate('/forgot-password');
+                      else window.location.href = '/forgot-password';
+                    }}
+                    className="text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative mt-2 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <Lock className="h-5 w-5" />
+                  </div>
+                  <input
+                    id="password-input"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-3 pl-11 pr-11 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Remember Me */}
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-brand-500 focus:ring-brand-500/40"
+                />
+                <label htmlFor="remember-me" className="ml-2 block text-xs text-slate-400">
+                  Keep me signed in on this device
+                </label>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 px-4 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all disabled:opacity-60 cursor-pointer"
+              >
+                {isLoading ? (
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : (
+                  <>
+                    <LogIn className="h-5 w-5" />
+                    <span>Sign In to POS</span>
+                  </>
+                )}
+              </button>
+
+              {/* Setup Admin Link */}
+              <div className="pt-4 border-t border-slate-800 text-center">
                 <button
                   type="button"
                   onClick={() => {
-                    if (onNavigate) onNavigate('/forgot-password');
-                    else window.location.href = '/forgot-password';
+                    setErrorMessage(null);
+                    setAuthMode('setup_admin');
                   }}
-                  className="text-xs font-medium text-brand-400 hover:text-brand-300 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-brand-400 transition-colors"
                 >
-                  Forgot password?
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>First-time setup? Create Master Admin Account</span>
                 </button>
               </div>
-              <div className="relative mt-2 rounded-xl shadow-sm">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-                  <Lock className="h-5 w-5" />
+            </form>
+          ) : (
+            <form onSubmit={handleSetupAdmin} className="space-y-4">
+              <div className="mb-2">
+                <h3 className="text-base font-semibold text-white">Create Master Admin</h3>
+                <p className="text-xs text-slate-400">
+                  Set up the primary administrative owner account for Danix POS.
+                </p>
+              </div>
+
+              {/* Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Full Name
+                </label>
+                <div className="relative mt-1.5 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <UserIcon className="h-4 w-4" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={adminName}
+                    onChange={(e) => setAdminName(e.target.value)}
+                    placeholder="Store Owner"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
                 </div>
-                <input
-                  id="password-input"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-3 pl-11 pr-11 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
-                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Admin Email
+                </label>
+                <div className="relative mt-1.5 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="owner@danix.lk"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Phone (Optional)
+                </label>
+                <div className="relative mt-1.5 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <Phone className="h-4 w-4" />
+                  </div>
+                  <input
+                    type="tel"
+                    value={adminPhone}
+                    onChange={(e) => setAdminPhone(e.target.value)}
+                    placeholder="076 252 4671"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Password (min 6 characters)
+                </label>
+                <div className="relative mt-1.5 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-2.5 pl-10 pr-10 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Confirm Password
+                </label>
+                <div className="relative mt-1.5 rounded-xl shadow-sm">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={adminConfirmPassword}
+                    onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="block w-full rounded-xl border border-slate-700 bg-slate-900/80 py-2.5 pl-10 pr-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Submit Setup */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 px-4 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all disabled:opacity-60 cursor-pointer mt-2"
+              >
+                {isLoading ? (
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : (
+                  <>
+                    <ShieldCheck className="h-5 w-5" />
+                    <span>Create Master Admin & Launch POS</span>
+                  </>
+                )}
+              </button>
+
+              <div className="pt-3 text-center">
                 <button
                   type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-200 transition-colors"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setAuthMode('signin');
+                  }}
+                  className="text-xs text-brand-400 hover:text-brand-300 transition-colors"
                 >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  Already have an account? Sign In
                 </button>
               </div>
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 px-4 text-sm font-semibold text-white shadow-lg shadow-brand-500/30 hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-slate-900 transition-all disabled:opacity-60 cursor-pointer"
-            >
-              {isLoading ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              ) : (
-                <>
-                  <LogIn className="h-5 w-5" />
-                  <span>Sign In to POS</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Demo Quick Access */}
-          <div className="mt-8 border-t border-slate-700/80 pt-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="h-4 w-4 text-brand-400" />
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Quick Demo Accounts:
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin@danix.lk', 'admin123')}
-                disabled={isLoading}
-                className="flex flex-col items-start p-2.5 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-slate-700/60 hover:border-brand-500/50 transition-all text-left group"
-              >
-                <div className="flex items-center gap-1.5 w-full justify-between">
-                  <span className="text-xs font-semibold text-white group-hover:text-brand-400">
-                    Super Admin
-                  </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
-                </div>
-                <span className="text-[11px] text-slate-400 font-mono mt-0.5">
-                  admin@danix.lk
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('staff@danix.lk', 'staff123')}
-                disabled={isLoading}
-                className="flex flex-col items-start p-2.5 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-slate-700/60 hover:border-sky-500/50 transition-all text-left group"
-              >
-                <div className="flex items-center gap-1.5 w-full justify-between">
-                  <span className="text-xs font-semibold text-white group-hover:text-sky-400">
-                    Counter Staff
-                  </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
-                </div>
-                <span className="text-[11px] text-slate-400 font-mono mt-0.5">
-                  staff@danix.lk
-                </span>
-              </button>
-            </div>
-          </div>
+            </form>
+          )}
         </div>
 
-        {/* Footer info */}
-        <p className="text-center text-xs text-slate-500">
-          Danix POS © {new Date().getFullYear()} • Secure Cloud POS System
-        </p>
+        {/* Security Footer */}
+        <div className="flex items-center justify-center gap-2 text-center text-xs text-slate-500">
+          <ShieldCheck className="h-4 w-4 text-emerald-400" />
+          <span>Enterprise 256-bit SSL Encryption & Firestore RBAC Protected</span>
+        </div>
       </div>
     </div>
   );

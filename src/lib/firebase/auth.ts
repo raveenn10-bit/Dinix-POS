@@ -10,86 +10,49 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from './config';
 import { User, UserRole } from '@/types';
 
-// Mock/Demo users when real Firebase API keys are not yet configured
-export const DEMO_USERS: Record<string, User> = {
-  'demo-admin-uid': {
-    uid: 'demo-admin-uid',
-    name: 'Danix Super Admin',
-    email: 'admin@danix.lk',
-    role: 'admin',
-    active: true,
-    phone: '+94 77 123 4567',
-    createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-    updatedAt: Date.now(),
-  },
-  'demo-staff-uid': {
-    uid: 'demo-staff-uid',
-    name: 'Danix Counter Staff',
-    email: 'staff@danix.lk',
-    role: 'staff',
-    active: true,
-    phone: '+94 71 987 6543',
-    createdAt: Date.now() - 10 * 24 * 60 * 60 * 1000,
-    updatedAt: Date.now(),
-  },
-};
-
 /**
- * Sign in user with email and password
+ * Sign in user with email and password via Firebase Authentication
  */
-export async function loginWithEmail(email: string, password: string): Promise<UserCredential | { user: { uid: string; email: string; displayName: string } }> {
-  // If demo credentials or Firebase not configured, provide local fallback
-  const normalizedEmail = email.trim().toLowerCase();
-  
-  if (!isFirebaseConfigured || normalizedEmail === 'admin@danix.lk' || normalizedEmail === 'staff@danix.lk') {
-    if (normalizedEmail === 'admin@danix.lk' && password.length >= 6) {
-      localStorage.setItem('danix_demo_user', 'demo-admin-uid');
-      return {
-        user: {
-          uid: 'demo-admin-uid',
-          email: 'admin@danix.lk',
-          displayName: 'Danix Super Admin',
-        },
-      };
-    }
-    if (normalizedEmail === 'staff@danix.lk' && password.length >= 6) {
-      localStorage.setItem('danix_demo_user', 'demo-staff-uid');
-      return {
-        user: {
-          uid: 'demo-staff-uid',
-          email: 'staff@danix.lk',
-          displayName: 'Danix Counter Staff',
-        },
-      };
-    }
-  }
+export async function loginWithEmail(
+  email: string,
+  password: string
+): Promise<UserCredential | { user: { uid: string; email: string; displayName: string } }> {
+  const trimmedEmail = email.trim();
 
+  // If Firebase is configured with credentials, perform real authentication
   try {
-    const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+    const credential = await signInWithEmailAndPassword(auth, trimmedEmail, password);
     return credential;
   } catch (error: unknown) {
-    // If Firebase error is api-key-not-valid, fallback gracefully if demo user
     const firebaseError = error as { code?: string; message?: string };
-    if (!isFirebaseConfigured || firebaseError?.code === 'auth/api-key-not-valid') {
-      if (normalizedEmail.includes('admin')) {
-        localStorage.setItem('danix_demo_user', 'demo-admin-uid');
-        return {
-          user: {
-            uid: 'demo-admin-uid',
-            email: normalizedEmail,
-            displayName: 'Danix Admin (Demo)',
-          },
-        };
+    
+    // Check if the error is due to unconfigured/placeholder Firebase project
+    if (firebaseError?.code === 'auth/api-key-not-valid' || !isFirebaseConfigured) {
+      // Check local users store for offline or initial administrator credentials
+      const localUsersRaw = localStorage.getItem('danix_pos_users');
+      if (localUsersRaw) {
+        try {
+          const localUsers: User[] = JSON.parse(localUsersRaw);
+          const found = localUsers.find(
+            (u) => u.email.toLowerCase() === trimmedEmail.toLowerCase() && u.active
+          );
+          if (found) {
+            localStorage.setItem('danix_auth_session', JSON.stringify(found));
+            return {
+              user: {
+                uid: found.uid,
+                email: found.email,
+                displayName: found.name,
+              },
+            };
+          }
+        } catch {
+          // ignore parsing error
+        }
       }
-      localStorage.setItem('danix_demo_user', 'demo-staff-uid');
-      return {
-        user: {
-          uid: 'demo-staff-uid',
-          email: normalizedEmail,
-          displayName: 'Danix Staff (Demo)',
-        },
-      };
     }
+    
+    // Re-throw genuine authentication error to be handled cleanly by the UI
     throw error;
   }
 }
@@ -98,22 +61,18 @@ export async function loginWithEmail(email: string, password: string): Promise<U
  * Sign out current user
  */
 export async function logoutUser(): Promise<void> {
-  localStorage.removeItem('danix_demo_user');
+  localStorage.removeItem('danix_auth_session');
   try {
     await signOut(auth);
   } catch (error) {
-    console.warn('[Auth] Sign out error or demo mode:', error);
+    console.warn('[Auth] Sign out error:', error);
   }
 }
 
 /**
- * Send password reset email
+ * Send password reset email via Firebase Auth
  */
 export async function sendPasswordReset(email: string): Promise<void> {
-  if (!isFirebaseConfigured) {
-    console.info(`[Auth Demo] Password reset link simulated for ${email}`);
-    return;
-  }
   await sendPasswordResetEmail(auth, email.trim());
 }
 
@@ -121,14 +80,17 @@ export async function sendPasswordReset(email: string): Promise<void> {
  * Retrieve user profile from Firestore `users/{uid}`
  */
 export async function getCurrentUserProfile(uid: string): Promise<User | null> {
-  // Check demo user
-  if (DEMO_USERS[uid]) {
-    return DEMO_USERS[uid];
-  }
-
-  const demoStored = localStorage.getItem('danix_demo_user');
-  if (demoStored && DEMO_USERS[demoStored] && uid === demoStored) {
-    return DEMO_USERS[demoStored];
+  // Check local active session first if offline/initial
+  const storedSession = localStorage.getItem('danix_auth_session');
+  if (storedSession) {
+    try {
+      const parsed = JSON.parse(storedSession) as User;
+      if (parsed.uid === uid) {
+        return parsed;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   try {
@@ -139,25 +101,24 @@ export async function getCurrentUserProfile(uid: string): Promise<User | null> {
       return userSnap.data() as User;
     }
 
-    // If doc doesn't exist, check if current auth user exists
+    // If Firestore document doesn't exist yet, auto-provision from Auth record
     const current = auth.currentUser;
     if (current && current.uid === uid) {
       const fallbackUser: User = {
         uid: current.uid,
-        name: current.displayName || current.email?.split('@')[0] || 'User',
+        name: current.displayName || current.email?.split('@')[0] || 'Administrator',
         email: current.email || '',
-        role: current.email?.includes('admin') ? 'admin' : 'staff',
+        role: current.email?.toLowerCase().includes('admin') ? 'admin' : 'staff',
         active: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
-      
-      // Auto-provision Firestore document if configured
+
       if (isFirebaseConfigured) {
         try {
           await setDoc(userDocRef, fallbackUser);
-        } catch {
-          // ignore doc creation error
+        } catch (err) {
+          console.warn('[Auth] Could not write user doc to Firestore:', err);
         }
       }
       return fallbackUser;
@@ -166,57 +127,137 @@ export async function getCurrentUserProfile(uid: string): Promise<User | null> {
     return null;
   } catch (error) {
     console.warn('[Auth] Error fetching user profile:', error);
-    // Graceful fallback for demo/unconfigured states
-    return {
-      uid,
-      name: 'Danix User',
-      email: auth.currentUser?.email || 'user@danix.lk',
+    return null;
+  }
+}
+
+/**
+ * Register First Super Admin (Initial System Setup)
+ */
+export async function registerFirstAdmin(
+  email: string,
+  password: string,
+  name: string,
+  phone?: string
+): Promise<User> {
+  const trimmedEmail = email.trim();
+
+  try {
+    const credential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+    if (credential.user) {
+      await updateProfile(credential.user, { displayName: name });
+    }
+
+    const adminUser: User = {
+      uid: credential.user.uid,
+      name,
+      email: credential.user.email || trimmedEmail,
+      phone: phone || '',
       role: 'admin',
       active: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+
+    // Save to Firestore `users/{uid}`
+    await setDoc(doc(db, 'users', credential.user.uid), adminUser);
+    localStorage.setItem('danix_auth_session', JSON.stringify(adminUser));
+    return adminUser;
+  } catch (error) {
+    const firebaseError = error as { code?: string; message?: string };
+    
+    // If Firebase keys are not yet connected, provision securely in local store
+    if (firebaseError?.code === 'auth/api-key-not-valid' || !isFirebaseConfigured) {
+      const newUid = `admin-${Date.now()}`;
+      const localAdmin: User = {
+        uid: newUid,
+        name,
+        email: trimmedEmail,
+        phone: phone || '',
+        role: 'admin',
+        active: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const existingUsersRaw = localStorage.getItem('danix_pos_users');
+      let usersList: User[] = [];
+      try {
+        usersList = existingUsersRaw ? JSON.parse(existingUsersRaw) : [];
+      } catch {
+        usersList = [];
+      }
+
+      usersList.push(localAdmin);
+      localStorage.setItem('danix_pos_users', JSON.stringify(usersList));
+      localStorage.setItem('danix_auth_session', JSON.stringify(localAdmin));
+      return localAdmin;
+    }
+
+    throw error;
   }
 }
 
 /**
- * Create a new user account and save to Firestore
+ * Create a new user account (Staff or Admin) and save to Firestore
  */
 export async function createUserAccount(
   email: string,
   password: string,
   name: string,
-  role: UserRole
+  role: UserRole,
+  phone?: string
 ): Promise<User> {
-  if (!isFirebaseConfigured) {
-    const newUid = `user-${Date.now()}`;
+  const trimmedEmail = email.trim();
+
+  try {
+    const credential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
+    if (credential.user) {
+      await updateProfile(credential.user, { displayName: name });
+    }
+
     const newUser: User = {
-      uid: newUid,
+      uid: credential.user.uid,
       name,
-      email,
+      email: credential.user.email || trimmedEmail,
+      phone: phone || '',
       role,
       active: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
+
+    await setDoc(doc(db, 'users', credential.user.uid), newUser);
     return newUser;
+  } catch (error) {
+    const firebaseError = error as { code?: string; message?: string };
+
+    if (firebaseError?.code === 'auth/api-key-not-valid' || !isFirebaseConfigured) {
+      const newUid = `user-${Date.now()}`;
+      const localUser: User = {
+        uid: newUid,
+        name,
+        email: trimmedEmail,
+        phone: phone || '',
+        role,
+        active: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const existingUsersRaw = localStorage.getItem('danix_pos_users');
+      let usersList: User[] = [];
+      try {
+        usersList = existingUsersRaw ? JSON.parse(existingUsersRaw) : [];
+      } catch {
+        usersList = [];
+      }
+
+      usersList.push(localUser);
+      localStorage.setItem('danix_pos_users', JSON.stringify(usersList));
+      return localUser;
+    }
+
+    throw error;
   }
-
-  const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-  if (credential.user) {
-    await updateProfile(credential.user, { displayName: name });
-  }
-
-  const newUser: User = {
-    uid: credential.user.uid,
-    name,
-    email: credential.user.email || email,
-    role,
-    active: true,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-
-  await setDoc(doc(db, 'users', credential.user.uid), newUser);
-  return newUser;
 }

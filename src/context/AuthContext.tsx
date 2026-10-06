@@ -6,7 +6,7 @@ import {
   loginWithEmail,
   logoutUser,
   sendPasswordReset,
-  DEMO_USERS,
+  registerFirstAdmin,
 } from '@/lib/firebase/auth';
 import { User, UserRole } from '@/types';
 
@@ -16,6 +16,7 @@ export interface AuthContextType {
   role: UserRole | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  registerAdmin: (name: string, email: string, password: string, phone?: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   isAdmin: boolean;
@@ -29,24 +30,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Check demo user in localStorage or setup listeners
   useEffect(() => {
     let unsubscribe: () => void = () => {};
 
-    const loadDemoOrAnonymous = () => {
-      const demoId = localStorage.getItem('danix_demo_user');
-      if (demoId && DEMO_USERS[demoId]) {
-        const demo = DEMO_USERS[demoId];
-        setUserProfile(demo);
-        setCurrentUser({
-          uid: demo.uid,
-          email: demo.email,
-          displayName: demo.name,
-        } as unknown as FirebaseUser);
-      } else {
-        setUserProfile(null);
-        setCurrentUser(null);
+    const checkLocalSession = () => {
+      const stored = localStorage.getItem('danix_auth_session');
+      if (stored) {
+        try {
+          const profile = JSON.parse(stored) as User;
+          if (profile && profile.active) {
+            setUserProfile(profile);
+            setCurrentUser({
+              uid: profile.uid,
+              email: profile.email,
+              displayName: profile.name,
+            } as unknown as FirebaseUser);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // ignore parsing error
+        }
       }
+      setUserProfile(null);
+      setCurrentUser(null);
       setLoading(false);
     };
 
@@ -59,10 +66,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (profile) {
               setUserProfile(profile);
             } else {
-              // Graceful fallback for authenticated user without Firestore document
               const fallback: User = {
                 uid: fbUser.uid,
-                name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Danix Staff',
+                name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Danix User',
                 email: fbUser.email || '',
                 role: fbUser.email?.toLowerCase().includes('admin') ? 'admin' : 'staff',
                 active: true,
@@ -72,15 +78,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUserProfile(fallback);
             }
           } catch (err) {
-            console.error('[AuthContext] Failed to load profile:', err);
+            console.error('[AuthContext] Profile load error:', err);
           }
         } else {
-          loadDemoOrAnonymous();
+          checkLocalSession();
         }
         setLoading(false);
       });
     } else {
-      loadDemoOrAnonymous();
+      checkLocalSession();
     }
 
     return () => {
@@ -104,6 +110,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           } as unknown as FirebaseUser);
         }
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerAdmin = async (name: string, email: string, password: string, phone?: string) => {
+    setLoading(true);
+    try {
+      const adminUser = await registerFirstAdmin(email, password, name, phone);
+      setUserProfile(adminUser);
+      setCurrentUser({
+        uid: adminUser.uid,
+        email: adminUser.email,
+        displayName: adminUser.name,
+      } as unknown as FirebaseUser);
     } finally {
       setLoading(false);
     }
@@ -134,6 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     role,
     loading,
     login,
+    registerAdmin,
     logout,
     resetPassword,
     isAdmin,
