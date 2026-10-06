@@ -8,30 +8,30 @@
 ක්ෂණික ඇමතුම්: 076 252 4671
 ඊමේල්: danixlkstore@gmail.com
 වෙබ් අඩවිය / පද්ධතිය: Danix Cloud POS & Delivery Management System
-දිනය: 2026-10-06
+අවසන් යාවත්කාලීන දිනය: 2026-10-06
 
 ================================================================================
 1. පද්ධතියට පිවිසීම (SYSTEM LOGIN & ACCESS DETAILS)
 ================================================================================
 
-පද්ධතිය ක්‍රියාත්මක වන වෙබ් ලිපිනය (System URL):
-- Local Server: http://localhost:5173
-- Production URL: (ඔබේ සජීවී ඩොමේනය / Live Web Domain)
+පද්ධතිය ක්‍රියාත්මක වන වෙබ් ලිපිනයන් (System URLs):
+- Local Server (පරිගණකයේ): http://localhost:5173
+- Network Access (ජංගම දුරකථන/ටැබ්ලට්): http://192.168.8.127:5173
+- Production URL (Vercel Live Web): https://dinix-pos.vercel.app (හෝ ඔබේ සජීවී ඩොමේනය)
 
 --------------------------------------------------------------------------------
 [A] ප්‍රධාන පරිපාලක ගිණුම (MASTER SUPER ADMIN CREDENTIALS)
 --------------------------------------------------------------------------------
-පද්ධතියේ සියලුම අංශ (මුදල් වාර්තා, වියදම්, සැකසුම්, සේවක ගිණුම්) පාලනය කිරීමේ 
-පූර්ණ බලය (Full Access) මෙම ගිණුමට හිමිවේ.
+පද්ධතියේ සියලුම අංශ (මුදල් වාර්තා, වියදම්, සැකසුම්, දත්ත මකාදැමීම, සේවක ගිණුම්) 
+පාලනය කිරීමේ පූර්ණ බලය (Full Access) මෙම ගිණුමට හිමිවේ.
 
   * පරිශීලක ඊමේල් (Admin Email): danixlkstore@gmail.com
-  * තාවකාලික මුරපදය (Default Password): Danix@2026Admin
+  * පෙරනිමි මුරපදය (Default Password): Danix@2026Admin
   * තනතුර (Role): Super Admin
 
-  💡 පළමු වරට ඇතුළු වීම (First-Time Setup):
-     Login පිටුවේ පහළ ඇති "First-time setup? Create Master Admin Account" 
-     ක්ලික් කර ඉහත ඊමේල් සහ මුරපදය ඇතුළත් කර Master Admin ගිණුම සක්‍රිය කරගත හැක.
-     (ඔබට අවශ්‍ය නම් වෙනත් ඕනෑම පුද්ගලික ඊමේල් සහ මුරපදයක් වුවද යෙදිය හැක).
+  💡 ආරම්භක Login වීම:
+     Login පිටුව විවෘත කළ සැණින් ඉහත ඊමේල් සහ මුරපදය ස්වයංක්‍රීයවම සටහන්ව ඇත.
+     කෙලින්ම "Sign In to POS" ක්ලික් කර පද්ධතියට ඇතුළු විය හැක.
 
 --------------------------------------------------------------------------------
 [B] කවුන්ටර කාර්ය මණ්ඩල ගිණුම් (STAFF / COUNTER ACCOUNTS)
@@ -62,42 +62,83 @@
    - ගැනුම් මිල (Cost) සහ විකුණුම් මිල (Selling) අනුව ලාභ ප්‍රතිශතය (Margin %) 
      ස්වයංක්‍රීයව පෙන්වීම.
 
-3. තොග කළමනාකරණය (Inventory & Stock Movement Ledger):
+3. භාණ්ඩ Barcode ලේබල් මුද්‍රණය (Barcode Label Printing Engine):
+   - Products පිටුවේ ඕනෑම භාණ්ඩයක Barcode අයිකනය ක්ලික් කිරීමෙන් විවෘත වේ.
+   - Thermal Roll (50mm x 30mm) - Xprinter / Zebra / Gprinter ස්ටිකර් මුද්‍රණ යන්ත්‍ර සඳහා.
+   - A4 Sticker Sheet (Grid 3x8 = 24 labels) - සාමාන්‍ය ලේසර්/ඉන්ක්ජෙට් A4 ස්ටිකර් සඳහා.
+   - Quantity Selector: ලේබල් 1, 5, 10, 24 හෝ කැමති ඕනෑම ප්‍රමාණයක් මුද්‍රණය කළ හැක.
+   - DANIX.LK නම, භාණ්ඩයේ නම, Code 128 Barcode, SKU සහ මිල (Rs.) පැහැදිලිව මුද්‍රණය වේ.
+   - Popup Blocker අවහිරතා රහිත Direct Print සහ SVG / PNG (300 DPI) බාගත කිරීමේ හැකියාව.
+
+4. තොග කළමනාකරණය (Inventory & Stock Movement Ledger):
    - තොග ලැබීම් (Stock In), විකිණීම් (Sale), ආපසු ලැබීම් (Return), 
      හානිවීම් (Damaged) සියල්ල විගණන ලෙජරයක සටහන් වේ.
    - තොග ඍණ අගයන් (- Negative Stock) වීම ස්වයංක්‍රීයව වළක්වයි.
 
-4. පාරිභෝගික නාමාවලිය (Customer CRM):
+5. පාරිභෝගික නාමාවලිය (Customer CRM):
    - පාරිභෝගික තොරතුරු, දුරකථන අංක, ලිපින සහ මිලදී ගැනීමේ ඉතිහාසය.
    - පාරිභෝගිකයාට එක ක්ලික් එකකින් WhatsApp පණිවිඩ යැවීමේ පහසුකම (WhatsApp Direct).
 
-5. ඇණවුම් සහ විකුණුම් (POS & Orders):
+6. ඇණවුම් සහ විකුණුම් (POS & Orders):
    - Barcode ස්කෑන් කර හෝ භාණ්ඩ තෝරා ඉක්මනින් Orders සෑදීම.
    - ඇණවුම තහවුරු කළ විගස ස්වයංක්‍රීයව භාණ්ඩ තොගයෙන් අඩු වීම.
    - Delivery Fee (රු. 350) සහ Discounts එකතු කිරීමේ පහසුකම.
 
-6. නිල බිල්පත් මුද්‍රණය (A4 Invoices):
+7. නිල බිල්පත් මුද්‍රණය (A4 Invoices):
    - අනුක්‍රමික බිල්පත් අංක (උදා: INV-2026-000001).
    - Danix Logo, ලිපිනය, බැංකු ගිණුම් විස්තර සහිත අලංකාර A4 බිල්පත.
    - නිල QR කේතය (QR Verification) බිල්පතේ මුද්‍රණය වේ.
    - මුද්‍රණය (Print) හෝ PDF / CSV ලෙස බාගත කිරීමේ හැකියාව.
 
-7. කුරියර් සහ පාර්සල් කළමනාකරණය (Delivery Management):
+8. කුරියර් සහ පාර්සල් කළමනාකරණය (Delivery Management):
    - ශ්‍රී ලංකාවේ ප්‍රධාන කුරියර් (Domex, Koombiyo, Prompt Xpress, Fardar ආදී) සහාය.
    - Tracking Numbers, Delivery Status (Pending -> Dispatched -> Delivered).
    - COD (Cash on Delivery) මුදල් එකතු කිරීමේ තොරතුරු නිරීක්ෂණය.
 
-8. කුරියර් ලේබල් මුද්‍රණය (Shipping Label Printing):
+9. කුරියර් ලේබල් මුද්‍රණය (Shipping Label Printing):
    - පාර්සල් සඳහා 4" x 6" Thermal Sticker ලේබල් සහ A4 Sticker Sheet සහාය.
    - Barcode, ලබන්නාගේ විස්තර, සහ ලොකු අකුරින් මුද්‍රණය වන COD Amount කොටුව.
 
-9. මූල්‍ය හා ලාභ වාර්තා (Financial Reports & P&L):
-   - දෛනික, සතිපතා, මාසික විකුණුම් වාර්තා.
-   - ශුද්ධ ලාභය ගණනය කිරීම (Net Profit = Sales Revenue - Cost of Goods - Expenses).
-   - සියලුම වාර්තා Excel / CSV ලෙස Download කිරීමේ පහසුකම.
+10. මූල්‍ය හා ලාභ වාර්තා (Financial Reports & P&L):
+    - දෛනික, සතිපතා, මාසික විකුණුම් වාර්තා.
+    - ශුද්ධ ලාභය ගණනය කිරීම (Net Profit = Sales Revenue - Cost of Goods - Expenses).
+    - සියලුම වාර්තා Excel / CSV ලෙස Download කිරීමේ පහසුකම.
+
+11. පූර්ණ දත්ත මකා දැමීම (System Factory Reset / Clear Data):
+    - Settings (/settings) පිටුවේ ඇති "Danger Zone" මඟින් පරීක්ෂණ ඇණවුම් සහ වාර්තා 
+      එක ක්ලික් එකකින් හිස් කර සැබෑ ව්‍යාපාරික කටයුතු ආරම්භ කිරීමට පිරිසිදු ආරම්භයක් (Clean Slate) ලබා ගත හැක.
+    - ආරක්ෂාව සඳහා "RESET" යනුවෙන් Type කිරීම අනිවාර්ය කර ඇත.
 
 ================================================================================
-3. දෛනික භාවිතය සඳහා උපදෙස් (DAILY OPERATIONS CHECKLIST)
+3. VERCEL හරහා අන්තර්ජාලයට දමන ආකාරය (ONLINE DEPLOYMENT GUIDE)
+================================================================================
+
+පද්ධතිය ඕනෑම තැනක සිට දුරකථනයෙන් හෝ පරිගණකයෙන් අන්තර්ජාලය හරහා භාවිතයට:
+
+1. https://vercel.com වෙත ගොස් ඔබගේ GitHub ගිණුමෙන් නොමිලේ Log වන්න.
+2. "Add New..." -> "Project" තෝරන්න.
+3. GitHub Repositories ලැයිස්තුවෙන් "Dinix-POS" තෝරා "Import" ක්ලික් කරන්න.
+4. "Deploy" බොත්තම ක්ලික් කරන්න.
+5. මිනිත්තුවක් ඇතුළත ඔබේ නිල Live Web Domain එක (උදා: https://dinix-pos.vercel.app) 
+   ලබා දෙනු ඇත! (vercel.json ගොනුව දැනටමත් සකසා ඇති බැවින් කිසිදු දෝෂයක් නොමැත).
+
+================================================================================
+4. සැබෑ GOOGLE FIREBASE CLOUD DATABASE එකට සම්බන්ධ කිරීම
+================================================================================
+
+පද්ධතිය සැබෑ Google Cloud Database එක සමඟ සම්බන්ධ කිරීමට:
+1. https://console.firebase.google.com වෙත ගොස් Web App Configuration ලබා ගන්න.
+2. .env ගොනුවේ (හෝ Vercel Environment Variables හි) අදාළ Keys ඇතුළත් කරන්න:
+   - VITE_FIREBASE_API_KEY
+   - VITE_FIREBASE_AUTH_DOMAIN
+   - VITE_FIREBASE_PROJECT_ID
+   - VITE_FIREBASE_STORAGE_BUCKET
+   - VITE_FIREBASE_MESSAGING_SENDER_ID
+   - VITE_FIREBASE_APP_ID
+3. Keys ඇතුළත් කළ සැණින් පද්ධතිය ස්වයංක්‍රීයව Live Cloud Database එකට මාරු වේ!
+
+================================================================================
+5. දෛනික භාවිතය සඳහා උපදෙස් (DAILY OPERATIONS CHECKLIST)
 ================================================================================
 
 1. වැඩ ආරම්භයේදී:
@@ -113,7 +154,7 @@
    - "Export CSV" මඟින් දෛනික ගිණුම් සාරාංශය සුරක්ෂිත කර ගන්න.
 
 ================================================================================
-4. තාක්ෂණික සහය සහ සහතික කිරීම (TECHNICAL SUPPORT)
+6. තාක්ෂණික සහය සහ සහතික කිරීම (TECHNICAL SUPPORT)
 ================================================================================
 
 - පද්ධති ගෘහනිර්මාණ ශිල්පය: React + Vite + TypeScript + Tailwind CSS
