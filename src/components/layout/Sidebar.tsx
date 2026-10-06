@@ -183,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-navy-800 hover:text-white lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-800 text-slate-300 hover:bg-navy-700 hover:text-white active:scale-95 transition-all lg:hidden"
             aria-label="Close sidebar"
           >
             <X className="h-5 w-5" />
@@ -214,7 +214,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
               }`}
             >
-              {role || 'staff'}
+              {role || 'admin'}
             </span>
           </div>
         </div>

@@ -161,81 +161,81 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* KPI Cards Grid - 2 columns on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {/* Today's Sales */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
               Today's Sales
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-              <TrendingUp className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-4 text-2xl font-extrabold text-slate-900">
+          <p className="mt-2 sm:mt-4 text-lg sm:text-2xl font-extrabold text-slate-900 truncate">
             Rs. {metrics?.todaySales.toLocaleString('en-US', { minimumFractionDigits: 2 }) ?? '0.00'}
           </p>
-          <p className="mt-1.5 text-xs text-emerald-600 font-medium flex items-center gap-1">
-            <CheckCircle className="h-3.5 w-3.5" />
-            Real-time verified receipts
+          <p className="mt-1 text-[10px] sm:text-xs text-emerald-600 font-medium flex items-center gap-1 truncate">
+            <CheckCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+            <span className="truncate">Verified receipts</span>
           </p>
         </div>
 
         {/* Total Revenue */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
               Total Revenue
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy-50 text-navy-800">
-              <CreditCard className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-800">
+              <CreditCard className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-4 text-2xl font-extrabold text-navy-950">
+          <p className="mt-2 sm:mt-4 text-lg sm:text-2xl font-extrabold text-navy-950 truncate">
             Rs. {metrics?.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 }) ?? '0.00'}
           </p>
-          <p className="mt-1.5 text-xs text-slate-500">
-            From {metrics?.totalOrdersCount ?? 0} lifetime transactions
+          <p className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+            {metrics?.totalOrdersCount ?? 0} transactions
           </p>
         </div>
 
         {/* Orders & Pending Status */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
               Pending Orders
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-              <Clock className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+              <Clock className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-4 text-2xl font-extrabold text-amber-600">
+          <p className="mt-2 sm:mt-4 text-lg sm:text-2xl font-extrabold text-amber-600 truncate">
             {metrics?.pendingOrdersCount ?? 0}{' '}
-            <span className="text-sm font-semibold text-slate-400">
-              / {metrics?.totalOrdersCount ?? 0} Total
+            <span className="text-xs font-semibold text-slate-400">
+              / {metrics?.totalOrdersCount ?? 0}
             </span>
           </p>
-          <p className="mt-1.5 text-xs text-amber-700 font-medium">
-            Requires packing or payment approval
+          <p className="mt-1 text-[10px] sm:text-xs text-amber-700 font-medium truncate">
+            Packing / dispatch
           </p>
         </div>
 
         {/* Active Deliveries */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Active Deliveries
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
+              Deliveries
             </span>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
-              <Truck className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600">
+              <Truck className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-4 text-2xl font-extrabold text-purple-700">
+          <p className="mt-2 sm:mt-4 text-lg sm:text-2xl font-extrabold text-purple-700 truncate">
             {metrics?.activeDeliveriesCount ?? 0} Parcels
           </p>
-          <p className="mt-1.5 text-xs text-slate-500">
-            In transit with courier partners
+          <p className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+            In courier transit
           </p>
         </div>
       </div>

@@ -223,73 +223,73 @@ export const InvoicesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* KPI Cards - 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {/* Total Invoiced */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
               Total Invoiced
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-800">
-              <DollarSign className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-800">
+              <DollarSign className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-black text-navy-900 font-mono">
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-black text-navy-900 font-mono truncate">
             Rs. {stats.totalInvoiced.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </p>
-          <p className="mt-1 text-xs text-slate-500 font-medium">
-            Across {stats.totalCount} issued invoices
+          <p className="mt-1 text-[10px] sm:text-xs text-slate-500 font-medium truncate">
+            {stats.totalCount} invoices
           </p>
         </div>
 
         {/* Collected / Paid */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Paid & Collected
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
+              Collected
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-              <CheckCircle2 className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-black text-emerald-600 font-mono">
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-black text-emerald-600 font-mono truncate">
             Rs. {stats.totalCollected.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </p>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
-            <span>{stats.paidCount} Fully settled</span>
+          <div className="mt-1 flex items-center gap-1 text-[10px] sm:text-xs text-emerald-700 font-medium truncate">
+            <span>{stats.paidCount} Settled</span>
           </div>
         </div>
 
         {/* Outstanding / Unpaid */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Outstanding Balance
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
+              Outstanding
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
-              <AlertCircle className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+              <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-black text-rose-600 font-mono">
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-black text-rose-600 font-mono truncate">
             Rs. {stats.totalOutstanding.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </p>
-          <p className="mt-1 text-xs text-rose-700 font-medium">
-            {stats.unpaidCount} unpaid • {stats.partialCount} partial
+          <p className="mt-1 text-[10px] sm:text-xs text-rose-700 font-medium truncate">
+            {stats.unpaidCount} due • {stats.partialCount} part
           </p>
         </div>
 
         {/* Collection Efficiency */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 truncate">
               Collection Rate
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-              <ArrowUpRight className="h-5 w-5" />
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
-          <p className="mt-3 text-2xl font-black text-brand-600 font-mono">
+          <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-black text-brand-600 font-mono truncate">
             {stats.totalInvoiced > 0
               ? `${Math.round((stats.totalCollected / stats.totalInvoiced) * 100)}%`
               : '0%'}
