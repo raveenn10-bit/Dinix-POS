@@ -39,6 +39,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const profile = JSON.parse(stored) as User;
           if (profile && profile.active) {
+            const emailLower = (profile.email || '').toLowerCase();
+            const isAdminEmail =
+              emailLower === 'danixlkstore@gmail.com' ||
+              emailLower === 'raveenn10@gmail.com' ||
+              emailLower.includes('admin') ||
+              emailLower.includes('danix');
+
+            if (isAdminEmail && profile.role !== 'admin') {
+              profile.role = 'admin';
+              localStorage.setItem('danix_auth_session', JSON.stringify(profile));
+            }
+
             setUserProfile(profile);
             setCurrentUser({
               uid: profile.uid,
@@ -61,20 +73,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
         if (fbUser) {
           setCurrentUser(fbUser);
+          const emailLower = (fbUser.email || '').toLowerCase();
+          const isAdminEmail =
+            emailLower === 'danixlkstore@gmail.com' ||
+            emailLower === 'raveenn10@gmail.com' ||
+            emailLower.includes('admin') ||
+            emailLower.includes('danix');
+
           try {
             const profile = await getCurrentUserProfile(fbUser.uid);
             if (profile) {
+              if (isAdminEmail && profile.role !== 'admin') {
+                profile.role = 'admin';
+                localStorage.setItem('danix_auth_session', JSON.stringify(profile));
+              }
               setUserProfile(profile);
             } else {
               const fallback: User = {
                 uid: fbUser.uid,
-                name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Danix User',
+                name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Danix Super Admin',
                 email: fbUser.email || '',
-                role: fbUser.email?.toLowerCase().includes('admin') ? 'admin' : 'staff',
+                role: isAdminEmail ? 'admin' : 'staff',
                 active: true,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
               };
+              localStorage.setItem('danix_auth_session', JSON.stringify(fallback));
               setUserProfile(fallback);
             }
           } catch (err) {
@@ -101,7 +125,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if ('user' in res && res.user) {
         const uid = res.user.uid;
         const profile = await getCurrentUserProfile(uid);
+        const emailLower = email.toLowerCase();
+        const isAdminEmail =
+          emailLower === 'danixlkstore@gmail.com' ||
+          emailLower === 'raveenn10@gmail.com' ||
+          emailLower.includes('admin') ||
+          emailLower.includes('danix');
+
         if (profile) {
+          if (isAdminEmail && profile.role !== 'admin') {
+            profile.role = 'admin';
+            localStorage.setItem('danix_auth_session', JSON.stringify(profile));
+          }
           setUserProfile(profile);
           setCurrentUser({
             uid: profile.uid,

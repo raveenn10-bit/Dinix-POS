@@ -257,16 +257,33 @@ export async function getCurrentUserProfile(uid: string): Promise<User | null> {
       const userSnap = await getDoc(userDocRef);
 
       if (userSnap.exists()) {
-        return userSnap.data() as User;
+        const profile = userSnap.data() as User;
+        const emailLower = (profile.email || '').toLowerCase();
+        if (
+          emailLower === 'danixlkstore@gmail.com' ||
+          emailLower === 'raveenn10@gmail.com' ||
+          emailLower.includes('admin') ||
+          emailLower.includes('danix')
+        ) {
+          profile.role = 'admin';
+        }
+        return profile;
       }
 
       const current = auth.currentUser;
       if (current && current.uid === uid) {
+        const emailLower = (current.email || '').toLowerCase();
+        const isAdminEmail =
+          emailLower === 'danixlkstore@gmail.com' ||
+          emailLower === 'raveenn10@gmail.com' ||
+          emailLower.includes('admin') ||
+          emailLower.includes('danix');
+
         const fallbackUser: User = {
           uid: current.uid,
-          name: current.displayName || current.email?.split('@')[0] || 'Administrator',
+          name: current.displayName || current.email?.split('@')[0] || 'Danix Super Admin',
           email: current.email || '',
-          role: current.email?.toLowerCase().includes('admin') ? 'admin' : 'staff',
+          role: isAdminEmail ? 'admin' : 'staff',
           active: true,
           createdAt: Date.now(),
           updatedAt: Date.now(),

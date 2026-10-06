@@ -76,13 +76,21 @@ export function initDemoStorage(): void {
   }
 }
 
+// Track collections seeded during this session to prevent repeated seeding loops
+const seededCollections = new Set<string>();
+
 // ----------------------------------------------------
 // PRODUCTS SERVICE & HOOK
 // ----------------------------------------------------
 
 export function useProducts() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [products, setProducts] = useState<Product[]>(() => {
+    initDemoStorage();
+    if (typeof window === 'undefined') return INITIAL_PRODUCTS;
+    const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+    return stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
@@ -95,12 +103,17 @@ export function useProducts() {
     }
 
     try {
-      setLoading(true);
       const snapshot = await getDocs(productsCol);
       if (snapshot.empty) {
-        // First run in live Firestore: seed initial products
-        for (const p of INITIAL_PRODUCTS) {
-          await setDoc(doc(db, 'products', p.id), p);
+        if (!seededCollections.has('products')) {
+          seededCollections.add('products');
+          for (const p of INITIAL_PRODUCTS) {
+            try {
+              await setDoc(doc(db, 'products', p.id), p);
+            } catch {
+              // ignore seed write permissions error if any
+            }
+          }
         }
         setProducts(INITIAL_PRODUCTS);
       } else {
@@ -135,14 +148,17 @@ export function useProducts() {
             id: docSnap.id,
           }));
           setProducts(list);
-          setLoading(false);
-        } else {
+        } else if (!seededCollections.has('products')) {
+          seededCollections.add('products');
           fetchProducts();
         }
+        setLoading(false);
       },
       (err) => {
-        console.warn('[Firestore snapshot error, falling back]', err);
-        fetchProducts();
+        console.warn('[Firestore products listener inactive, using local data]:', err);
+        const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+        setProducts(stored ? JSON.parse(stored) : INITIAL_PRODUCTS);
+        setLoading(false);
       }
     );
 
@@ -230,8 +246,13 @@ export function useProducts() {
 // ----------------------------------------------------
 
 export function useCustomers() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    initDemoStorage();
+    if (typeof window === 'undefined') return INITIAL_CUSTOMERS;
+    const stored = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+    return stored ? JSON.parse(stored) : INITIAL_CUSTOMERS;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCustomers = useCallback(async () => {
@@ -244,11 +265,17 @@ export function useCustomers() {
     }
 
     try {
-      setLoading(true);
       const snapshot = await getDocs(customersCol);
       if (snapshot.empty) {
-        for (const c of INITIAL_CUSTOMERS) {
-          await setDoc(doc(db, 'customers', c.id), c);
+        if (!seededCollections.has('customers')) {
+          seededCollections.add('customers');
+          for (const c of INITIAL_CUSTOMERS) {
+            try {
+              await setDoc(doc(db, 'customers', c.id), c);
+            } catch {
+              // ignore seed write error if any
+            }
+          }
         }
         setCustomers(INITIAL_CUSTOMERS);
       } else {
@@ -283,14 +310,17 @@ export function useCustomers() {
             id: docSnap.id,
           }));
           setCustomers(list);
-          setLoading(false);
-        } else {
+        } else if (!seededCollections.has('customers')) {
+          seededCollections.add('customers');
           fetchCustomers();
         }
+        setLoading(false);
       },
       (err) => {
-        console.warn('[Firestore snapshot customers error]', err);
-        fetchCustomers();
+        console.warn('[Firestore customers listener inactive, using local data]:', err);
+        const stored = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
+        setCustomers(stored ? JSON.parse(stored) : INITIAL_CUSTOMERS);
+        setLoading(false);
       }
     );
 
@@ -354,8 +384,13 @@ export function useCustomers() {
 // ----------------------------------------------------
 
 export function useOrders() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    initDemoStorage();
+    if (typeof window === 'undefined') return INITIAL_ORDERS;
+    const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
+    return stored ? JSON.parse(stored) : INITIAL_ORDERS;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
@@ -368,11 +403,17 @@ export function useOrders() {
     }
 
     try {
-      setLoading(true);
       const snapshot = await getDocs(query(ordersCol, orderBy('createdAt', 'desc')));
       if (snapshot.empty) {
-        for (const o of INITIAL_ORDERS) {
-          await setDoc(doc(db, 'orders', o.id), o);
+        if (!seededCollections.has('orders')) {
+          seededCollections.add('orders');
+          for (const o of INITIAL_ORDERS) {
+            try {
+              await setDoc(doc(db, 'orders', o.id), o);
+            } catch {
+              // ignore seed write error if any
+            }
+          }
         }
         setOrders(INITIAL_ORDERS);
       } else {
@@ -407,14 +448,17 @@ export function useOrders() {
             id: docSnap.id,
           }));
           setOrders(list);
-          setLoading(false);
-        } else {
+        } else if (!seededCollections.has('orders')) {
+          seededCollections.add('orders');
           fetchOrders();
         }
+        setLoading(false);
       },
       (err) => {
-        console.warn('[Firestore snapshot orders error]', err);
-        fetchOrders();
+        console.warn('[Firestore orders listener inactive, using local data]:', err);
+        const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
+        setOrders(stored ? JSON.parse(stored) : INITIAL_ORDERS);
+        setLoading(false);
       }
     );
 
@@ -614,8 +658,13 @@ export function useOrders() {
 // ----------------------------------------------------
 
 export function useStockMovements() {
-  const [movements, setMovements] = useState<StockMovement[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [movements, setMovements] = useState<StockMovement[]>(() => {
+    initDemoStorage();
+    if (typeof window === 'undefined') return INITIAL_STOCK_MOVEMENTS;
+    const stored = localStorage.getItem(STORAGE_KEYS.STOCK_MOVEMENTS);
+    return stored ? JSON.parse(stored) : INITIAL_STOCK_MOVEMENTS;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMovements = useCallback(async () => {
@@ -628,11 +677,17 @@ export function useStockMovements() {
     }
 
     try {
-      setLoading(true);
       const snapshot = await getDocs(query(stockMovementsCol, orderBy('createdAt', 'desc')));
       if (snapshot.empty) {
-        for (const sm of INITIAL_STOCK_MOVEMENTS) {
-          await setDoc(doc(db, 'stock_movements', sm.id), sm);
+        if (!seededCollections.has('stock_movements')) {
+          seededCollections.add('stock_movements');
+          for (const sm of INITIAL_STOCK_MOVEMENTS) {
+            try {
+              await setDoc(doc(db, 'stock_movements', sm.id), sm);
+            } catch {
+              // ignore seed write error if any
+            }
+          }
         }
         setMovements(INITIAL_STOCK_MOVEMENTS);
       } else {
@@ -667,14 +722,17 @@ export function useStockMovements() {
             id: docSnap.id,
           }));
           setMovements(list);
-          setLoading(false);
-        } else {
+        } else if (!seededCollections.has('stock_movements')) {
+          seededCollections.add('stock_movements');
           fetchMovements();
         }
+        setLoading(false);
       },
       (err) => {
-        console.warn('[Firestore stock movements snapshot error]', err);
-        fetchMovements();
+        console.warn('[Firestore stock movements listener inactive, using local data]:', err);
+        const stored = localStorage.getItem(STORAGE_KEYS.STOCK_MOVEMENTS);
+        setMovements(stored ? JSON.parse(stored) : INITIAL_STOCK_MOVEMENTS);
+        setLoading(false);
       }
     );
 
@@ -730,8 +788,13 @@ export function useStockMovements() {
 // ----------------------------------------------------
 
 export function useInvoices() {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    initDemoStorage();
+    if (typeof window === 'undefined') return INITIAL_INVOICES;
+    const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
+    return stored ? JSON.parse(stored) : INITIAL_INVOICES;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
@@ -744,11 +807,17 @@ export function useInvoices() {
     }
 
     try {
-      setLoading(true);
       const snapshot = await getDocs(query(invoicesCol, orderBy('createdAt', 'desc')));
       if (snapshot.empty) {
-        for (const inv of INITIAL_INVOICES) {
-          await setDoc(doc(db, 'invoices', inv.id), inv);
+        if (!seededCollections.has('invoices')) {
+          seededCollections.add('invoices');
+          for (const inv of INITIAL_INVOICES) {
+            try {
+              await setDoc(doc(db, 'invoices', inv.id), inv);
+            } catch {
+              // ignore seed write error if any
+            }
+          }
         }
         setInvoices(INITIAL_INVOICES);
       } else {
@@ -783,14 +852,17 @@ export function useInvoices() {
             id: docSnap.id,
           }));
           setInvoices(list);
-          setLoading(false);
-        } else {
+        } else if (!seededCollections.has('invoices')) {
+          seededCollections.add('invoices');
           fetchInvoices();
         }
+        setLoading(false);
       },
       (err) => {
-        console.warn('[Firestore snapshot invoices error]', err);
-        fetchInvoices();
+        console.warn('[Firestore invoices listener inactive, using local data]:', err);
+        const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
+        setInvoices(stored ? JSON.parse(stored) : INITIAL_INVOICES);
+        setLoading(false);
       }
     );
 
@@ -971,8 +1043,13 @@ export function useInvoices() {
 // ----------------------------------------------------
 
 export function useDeliveries() {
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [deliveries, setDeliveries] = useState<Delivery[]>(() => {
+    initDemoStorage();
+    if (typeof window === 'undefined') return INITIAL_DELIVERIES;
+    const stored = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
+    return stored ? JSON.parse(stored) : INITIAL_DELIVERIES;
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDeliveries = useCallback(async () => {
@@ -985,11 +1062,17 @@ export function useDeliveries() {
     }
 
     try {
-      setLoading(true);
       const snapshot = await getDocs(query(deliveriesCol, orderBy('createdAt', 'desc')));
       if (snapshot.empty) {
-        for (const del of INITIAL_DELIVERIES) {
-          await setDoc(doc(db, 'deliveries', del.id), del);
+        if (!seededCollections.has('deliveries')) {
+          seededCollections.add('deliveries');
+          for (const del of INITIAL_DELIVERIES) {
+            try {
+              await setDoc(doc(db, 'deliveries', del.id), del);
+            } catch {
+              // ignore seed write error if any
+            }
+          }
         }
         setDeliveries(INITIAL_DELIVERIES);
       } else {
@@ -1024,14 +1107,17 @@ export function useDeliveries() {
             id: docSnap.id,
           }));
           setDeliveries(list);
-          setLoading(false);
-        } else {
+        } else if (!seededCollections.has('deliveries')) {
+          seededCollections.add('deliveries');
           fetchDeliveries();
         }
+        setLoading(false);
       },
       (err) => {
-        console.warn('[Firestore snapshot deliveries error]', err);
-        fetchDeliveries();
+        console.warn('[Firestore deliveries listener inactive, using local data]:', err);
+        const stored = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
+        setDeliveries(stored ? JSON.parse(stored) : INITIAL_DELIVERIES);
+        setLoading(false);
       }
     );
 
