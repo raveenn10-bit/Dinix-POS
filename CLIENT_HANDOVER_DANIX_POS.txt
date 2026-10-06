@@ -26,12 +26,13 @@
 පාලනය කිරීමේ පූර්ණ බලය (Full Access) මෙම ගිණුමට හිමිවේ.
 
   * පරිශීලක ඊමේල් (Admin Email): danixlkstore@gmail.com
-  * පෙරනිමි මුරපදය (Default Password): Danix@2026Admin
+  * පෙරනිමි මුරපදය (Default Password): [සුරක්ෂිත මුරපදය - ආරක්‍ෂිත .env / Local Credential Vault බලන්න]
   * තනතුර (Role): Super Admin
 
-  💡 ආරම්භක Login වීම:
-     Login පිටුව විවෘත කළ සැණින් ඉහත ඊමේල් සහ මුරපදය ස්වයංක්‍රීයවම සටහන්ව ඇත.
-     කෙලින්ම "Sign In to POS" ක්ලික් කර පද්ධතියට ඇතුළු විය හැක.
+  💡 ආරක්ෂිත Login වීම (Security Hardened):
+     පද්ධතියේ ආරක්ෂාව උපරිම කිරීමට (Security Tightening) Login පිටුවේ මුරපදය 
+     ස්වයංක්‍රීයව prefill නොවන ලෙස සකසා ඇත. පරිපාලක ඔබගේ ඊමේල් ලිපිනය සහ 
+     මුරපදය ඇතුළත් කර "Sign In to POS" මඟින් ආරක්ෂිතව පිවිසෙන්න.
 
 --------------------------------------------------------------------------------
 [B] කවුන්ටර කාර්ය මණ්ඩල ගිණුම් (STAFF / COUNTER ACCOUNTS)
@@ -130,20 +131,20 @@
 Google Cloud Project ID: danix-pos-lk-2026
 Google Account: raveenn10@gmail.com
 
-පද්ධතියේ .env ගොනුවට සහ Vercel Environment Variables සඳහා යොදන Live Keys:
+පද්ධතියේ .env ගොනුවේ සුරක්ෂිතව ඇති Environment Variables (Git-Ignored):
 --------------------------------------------------------------------------------
-VITE_FIREBASE_API_KEY=AIzaSyDiFV21hQk6wSoiR4Jqwuiij1mGQOVBk0s
+VITE_FIREBASE_API_KEY=<ආරක්ෂිත API Key එක ඔබේ .env ගොනුවෙන් ලබා ගන්න>
 VITE_FIREBASE_AUTH_DOMAIN=danix-pos-lk-2026.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=danix-pos-lk-2026
 VITE_FIREBASE_STORAGE_BUCKET=danix-pos-lk-2026.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=1029375514948
-VITE_FIREBASE_APP_ID=1:1029375514948:web:47ce8d97389b84c77a9f11
-VITE_FIREBASE_MEASUREMENT_ID=G-84BG2JE4JP
+VITE_FIREBASE_MESSAGING_SENDER_ID=<Sender ID - .env ගොනුව බලන්න>
+VITE_FIREBASE_APP_ID=<App ID - .env ගොනුව බලන්න>
+VITE_FIREBASE_MEASUREMENT_ID=<Measurement ID - .env ගොනුව බලන්න>
 
 💡 Vercel Deployment සඳහා:
    Vercel Dashboard ➔ Project Settings ➔ "Environment Variables" වෙත ගොස් 
-   ඉහත Keys 7 එකතු කර "Save" කරන්න. එමඟින් Vercel හි පළවන Live Web App එකද 
-   සෘජුවම සැබෑ Google Cloud Database එක සමඟ Sync වේ.
+   ඔබගේ .env ගොනුවේ ඇති Keys 7 ආරක්ෂිතව ඇතුළත් කර "Save" කරන්න. 
+   GitHub වෙත රහස්‍ය දත්ත leak වීම වැළැක්වීමට .gitignore මඟින් .env ගොනුව ආරක්ෂා කර ඇත.
 
 
 ================================================================================

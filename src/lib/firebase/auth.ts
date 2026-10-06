@@ -70,10 +70,7 @@ export async function loginWithEmail(
           errCode === 'auth/invalid-credential' ||
           errCode === 'auth/invalid-login-credentials') &&
         (lowerEmail === 'danixlkstore@gmail.com' ||
-          lowerEmail === 'raveenn10@gmail.com' ||
-          lowerEmail.includes('admin') ||
-          password === 'Danix@2026Admin' ||
-          password === 'admin123')
+          lowerEmail === 'raveenn10@gmail.com')
       ) {
         try {
           const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
@@ -134,13 +131,10 @@ export async function loginWithEmail(
     };
   }
 
-  // 2. Allow default credentials or admin setup
+  // 2. Allow verified admin setup if local database is fresh
   if (
     lowerEmail === 'danixlkstore@gmail.com' ||
-    lowerEmail === 'admin@danix.lk' ||
-    lowerEmail.includes('admin') ||
-    password === 'Danix@2026Admin' ||
-    password === 'admin123'
+    lowerEmail === 'raveenn10@gmail.com'
   ) {
     const adminUser: User = {
       uid: `admin-${Date.now()}`,

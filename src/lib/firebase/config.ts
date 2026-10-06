@@ -3,8 +3,8 @@ import { getAuth, connectAuthEmulator, Auth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator, Firestore } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/storage';
 
-const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDiFV21hQk6wSoiR4Jqwuiij1mGQOVBk0s';
-const rawProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'danix-pos-lk-2026';
+const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY || '';
+const rawProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '';
 
 // Validate if Firebase configuration has valid credentials
 export const isFirebaseConfigured = Boolean(
@@ -17,13 +17,13 @@ export const isFirebaseConfigured = Boolean(
 );
 
 const firebaseConfig = {
-  apiKey: rawApiKey,
+  apiKey: rawApiKey || 'demo-danix-key',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'danix-pos-lk-2026.firebaseapp.com',
-  projectId: rawProjectId,
+  projectId: rawProjectId || 'danix-pos-lk-2026',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'danix-pos-lk-2026.firebasestorage.app',
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '1029375514948',
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:1029375514948:web:47ce8d97389b84c77a9f11',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || 'G-84BG2JE4JP',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 };
 
 // Initialize Firebase App gracefully (singleton)

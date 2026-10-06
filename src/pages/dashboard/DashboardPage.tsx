@@ -115,6 +115,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const getTimeBasedGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 17) return 'Good afternoon';
+    if (hour >= 17 && hour < 22) return 'Good evening';
+    return 'Good night';
+  };
+
+  const getUserGreetingName = () => {
+    if (!userProfile?.name) return 'Administrator';
+    if (userProfile.name.toLowerCase() === 'danixlkstore') return 'Danix Store';
+    return userProfile.name;
+  };
+
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-300">
       {/* Top Banner / Greetings */}
@@ -132,7 +146,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Good day, {userProfile?.name || 'Administrator'}!
+              {getTimeBasedGreeting()}, {getUserGreetingName()}!
             </h1>
             <p className="mt-1 text-sm text-slate-300">
               Here is your Danix POS operational summary. All systems online and ready for orders & dispatch.
