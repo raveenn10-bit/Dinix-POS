@@ -1,0 +1,702 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model & Architecture
+    // ===============================================================
+    //
+    // This security rules file assumes and enforces the following schemas:
+    //
+    // 1. Collection: users
+    //    Document ID: {uid} (Firebase Auth UID)
+    //    Fields:
+    //      - uid: string (1-128 chars, matches request.auth.uid) [Required]
+    //      - name: string (1-100 chars) [Required]
+    //      - email: string (5-100 chars, valid email format) [Required]
+    //      - role: string enum: ['admin', 'staff'] [Required]
+    //      - active: bool (account activation status) [Required]
+    //      - createdAt: timestamp [Required, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //      - phone: string (0-30 chars) [Optional]
+    //      - photoURL: string (0-500 chars) [Optional]
+    //
+    // 2. Collection: products
+    //    Document ID: {productId}
+    //    Fields:
+    //      - name: string (1-150 chars) [Required]
+    //      - sku: string (1-50 chars) [Required]
+    //      - costPrice: number (>= 0) [Required]
+    //      - sellingPrice: number (>= 0) [Required]
+    //      - stockQuantity: number (current inventory count) [Required]
+    //      - minimumStock: number (>= 0, low-stock threshold) [Required]
+    //      - id: string (0-100 chars) [Optional]
+    //      - barcode: string (0-100 chars) [Optional]
+    //      - category: string (0-100 chars) [Optional]
+    //      - description: string (0-1000 chars) [Optional]
+    //      - unit: string (0-30 chars, e.g., 'pcs', 'kg') [Optional]
+    //      - active: bool [Optional]
+    //      - imageUrl: string (0-1000 chars) [Optional]
+    //      - createdAt: timestamp [Optional, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //
+    // 3. Collection: customers
+    //    Document ID: {customerId}
+    //    Fields:
+    //      - name: string (1-100 chars) [Required]
+    //      - id: string (0-100 chars) [Optional]
+    //      - phone: string (0-30 chars) [Optional]
+    //      - email: string (0-100 chars) [Optional]
+    //      - address: string (0-300 chars) [Optional]
+    //      - city: string (0-100 chars) [Optional]
+    //      - notes: string (0-1000 chars) [Optional]
+    //      - totalOrders: number (>= 0) [Optional]
+    //      - totalSpent: number (>= 0) [Optional]
+    //      - outstandingBalance: number [Optional]
+    //      - active: bool [Optional]
+    //      - createdAt: timestamp [Optional, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //
+    // 4. Collection: orders
+    //    Document ID: {orderId}
+    //    Fields:
+    //      - orderNumber: string (1-50 chars) [Required, Immutable]
+    //      - customerId: string (0-100 chars) [Required]
+    //      - items: list (1-200 order line items) [Required]
+    //      - subtotal: number (>= 0) [Required]
+    //      - total: number (>= 0) [Required]
+    //      - orderStatus: string enum: ['pending', 'processing', 'completed', 'delivered', 'cancelled', 'draft'] [Required]
+    //      - paymentStatus: string enum: ['paid', 'unpaid', 'partially_paid', 'refunded'] [Required]
+    //      - createdBy: string (matches auth.uid) [Required, Immutable]
+    //      - id: string (0-100 chars) [Optional]
+    //      - customerName: string (0-100 chars) [Optional]
+    //      - customerPhone: string (0-30 chars) [Optional]
+    //      - customerAddress: string (0-300 chars) [Optional]
+    //      - discount: number (>= 0) [Optional]
+    //      - deliveryFee: number (>= 0) [Optional]
+    //      - tax: number (>= 0) [Optional]
+    //      - paidAmount: number (>= 0) [Optional]
+    //      - balance: number [Optional]
+    //      - paymentMethod: string (0-50 chars) [Optional]
+    //      - deliveryId: string (0-100 chars) [Optional]
+    //      - invoiceId: string (0-100 chars) [Optional]
+    //      - notes: string (0-1000 chars) [Optional]
+    //      - createdAt: timestamp [Optional, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //
+    // 5. Collection: invoices
+    //    Document ID: {invoiceId}
+    //    Fields:
+    //      - invoiceNumber: string (1-50 chars) [Required, Immutable]
+    //      - orderId: string (1-100 chars) [Required, Immutable]
+    //      - customerId: string (0-100 chars) [Required]
+    //      - total: number (>= 0) [Required]
+    //      - subtotal: number (>= 0) [Required]
+    //      - createdBy: string (matches auth.uid) [Required, Immutable]
+    //      - issuedAt: timestamp [Optional, Immutable]
+    //      - items: list (<= 200 items) [Optional]
+    //      - customerName: string (0-100 chars) [Optional]
+    //      - customerPhone: string (0-30 chars) [Optional]
+    //      - customerAddress: string (0-300 chars) [Optional]
+    //      - discount: number (>= 0) [Optional]
+    //      - tax: number (>= 0) [Optional]
+    //      - paidAmount: number (>= 0) [Optional]
+    //      - paymentStatus: string (0-50 chars) [Optional]
+    //      - paymentMethod: string (0-50 chars) [Optional]
+    //      - status: string enum: ['issued', 'paid', 'partially_paid', 'void', 'cancelled'] [Optional]
+    //      - notes: string (0-1000 chars) [Optional]
+    //      - createdAt: timestamp [Optional, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //
+    // 6. Collection: deliveries
+    //    Document ID: {deliveryId}
+    //    Fields:
+    //      - orderId: string (1-100 chars) [Required, Immutable]
+    //      - customerId: string (0-100 chars) [Required]
+    //      - status: string enum: ['pending', 'assigned', 'picked_up', 'in_transit', 'delivered', 'failed', 'returned', 'cancelled'] [Required]
+    //      - recipientName: string (1-100 chars) [Required]
+    //      - recipientPhone: string (1-30 chars) [Required]
+    //      - deliveryAddress: string (1-300 chars) [Required]
+    //      - id: string (0-100 chars) [Optional]
+    //      - trackingNumber: string (0-100 chars) [Optional]
+    //      - courier: string (0-100 chars) [Optional]
+    //      - deliveryFee: number (>= 0) [Optional]
+    //      - codAmount: number (>= 0) [Optional]
+    //      - notes: string (0-1000 chars) [Optional]
+    //      - assignedTo: string (0-100 chars) [Optional]
+    //      - createdBy: string (0-128 chars) [Optional]
+    //      - dispatchedAt: timestamp [Optional]
+    //      - deliveredAt: timestamp [Optional]
+    //      - createdAt: timestamp [Optional, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //
+    // 7. Collection: stock_movements (Immutable Audit Log)
+    //    Document ID: {movementId}
+    //    Fields:
+    //      - productId: string (1-100 chars) [Required]
+    //      - type: string enum: ['in', 'out', 'adjustment', 'return', 'sale', 'transfer'] [Required]
+    //      - quantity: number [Required]
+    //      - previousStock: number [Required]
+    //      - newStock: number [Required]
+    //      - reason: string (1-200 chars) [Required]
+    //      - createdBy: string (1-128 chars, matches auth.uid) [Required]
+    //      - createdAt: timestamp [Required]
+    //      - id: string (0-100 chars) [Optional]
+    //      - orderId: string (0-100 chars) [Optional]
+    //      - reference: string (0-100 chars) [Optional]
+    //      - note: string (0-500 chars) [Optional]
+    //
+    // 8. Collection: expenses (Restricted Admin Ledger)
+    //    Document ID: {expenseId}
+    //    Fields:
+    //      - title: string (1-150 chars) [Required]
+    //      - amount: number (> 0) [Required]
+    //      - category: string enum: ['utilities', 'rent', 'salaries', 'supplies', 'marketing', 'delivery', 'maintenance', 'inventory', 'other'] [Required]
+    //      - date: timestamp [Required]
+    //      - createdBy: string (1-128 chars, matches auth.uid) [Required]
+    //      - id: string (0-100 chars) [Optional]
+    //      - description: string (0-1000 chars) [Optional]
+    //      - paymentMethod: string (0-50 chars) [Optional]
+    //      - receiptUrl: string (0-1000 chars) [Optional]
+    //      - vendor: string (0-100 chars) [Optional]
+    //      - createdAt: timestamp [Optional, Immutable]
+    //      - updatedAt: timestamp [Optional]
+    //
+    // 9. Collection: activity_logs (Immutable System Auditing)
+    //    Document ID: {logId}
+    //    Fields:
+    //      - action: string (1-100 chars) [Required]
+    //      - details: string (1-500 chars) [Required]
+    //      - userId: string (matches auth.uid) [Required]
+    //      - userName: string (1-100 chars) [Required]
+    //      - createdAt: timestamp [Required]
+    //      - id: string (0-100 chars) [Optional]
+    //      - entityType: string (0-50 chars) [Optional]
+    //      - entityId: string (0-100 chars) [Optional]
+    //      - ipAddress: string (0-50 chars) [Optional]
+    //      - metadata: map [Optional]
+    //
+    // 10. Collection: settings
+    //     Document ID: {settingId} (e.g., 'business', 'invoice_counter')
+    //     - 'business': Store profile, contact info, and tax configs (Admin write, active user read)
+    //     - 'invoice_counter': Atomic counter document for sequential invoice IDs
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Global Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function userDocExists() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Verified administrator bootstrap email fallback
+    function isBootstrapAdmin() {
+      return isAuthenticated() &&
+        request.auth.token.email != null &&
+        request.auth.token.email == 'danixlkstore@gmail.com';
+    }
+
+    // System-wide active user verification
+    function isActive() {
+      return isAuthenticated() && (
+        isBootstrapAdmin() ||
+        (request.auth.token.keys().hasAll(['active']) && request.auth.token.active == true) ||
+        (userDocExists() && getUserData().get('active', false) == true)
+      );
+    }
+
+    // Role-based privilege checks
+    function isAdmin() {
+      return isAuthenticated() && (
+        isBootstrapAdmin() ||
+        (isActive() && (
+          (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == 'admin') ||
+          (userDocExists() && getUserData().get('role', '') == 'admin')
+        ))
+      );
+    }
+
+    function isStaff() {
+      return isAuthenticated() && isActive() && (
+        isAdmin() ||
+        (request.auth.token.keys().hasAll(['role']) && (request.auth.token.role == 'staff' || request.auth.token.role == 'admin')) ||
+        (userDocExists() && (getUserData().get('role', '') == 'staff' || getUserData().get('role', '') == 'admin'))
+      );
+    }
+
+    // Field and Type Validators
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == null ||
+        (request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidOptionalNumber(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == null ||
+        (request.resource.data[field] is number &&
+         request.resource.data[field] >= minVal &&
+         request.resource.data[field] <= maxVal);
+    }
+
+    function isValidOptionalTimestamp(field) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == null ||
+        request.resource.data[field] is timestamp;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() <= 100 &&
+        email.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validator Functions (Validator Function Pattern)
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'name', 'email', 'role', 'active', 'createdAt', 'updatedAt', 'phone', 'photoURL']) &&
+        hasRequiredFields(['uid', 'name', 'email', 'role', 'active']) &&
+        validStringLength('uid', 1, 128) &&
+        validStringLength('name', 1, 100) &&
+        validStringLength('email', 5, 100) &&
+        isValidEmail(data.email) &&
+        data.role in ['admin', 'staff'] &&
+        data.active is bool &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt') &&
+        isValidOptionalString('phone', 0, 30) &&
+        isValidOptionalString('photoURL', 0, 500);
+    }
+
+    function isValidProduct(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'sku', 'barcode', 'category', 'description', 'costPrice', 'sellingPrice', 'stockQuantity', 'minimumStock', 'unit', 'active', 'imageUrl', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['name', 'sku', 'costPrice', 'sellingPrice', 'stockQuantity', 'minimumStock']) &&
+        validStringLength('name', 1, 150) &&
+        validStringLength('sku', 1, 50) &&
+        data.costPrice is number && data.costPrice >= 0 &&
+        data.sellingPrice is number && data.sellingPrice >= 0 &&
+        data.stockQuantity is number &&
+        data.minimumStock is number && data.minimumStock >= 0 &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('barcode', 0, 100) &&
+        isValidOptionalString('category', 0, 100) &&
+        isValidOptionalString('description', 0, 1000) &&
+        isValidOptionalString('unit', 0, 30) &&
+        isValidOptionalString('imageUrl', 0, 1000) &&
+        (!( 'active' in data) || data.active is bool) &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidCustomer(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'phone', 'email', 'address', 'city', 'notes', 'totalOrders', 'totalSpent', 'outstandingBalance', 'active', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['name']) &&
+        validStringLength('name', 1, 100) &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('phone', 0, 30) &&
+        isValidOptionalString('email', 0, 100) &&
+        (!( 'email' in data) || data.email == null || data.email == '' || isValidEmail(data.email)) &&
+        isValidOptionalString('address', 0, 300) &&
+        isValidOptionalString('city', 0, 100) &&
+        isValidOptionalString('notes', 0, 1000) &&
+        isValidOptionalNumber('totalOrders', 0, 1000000) &&
+        isValidOptionalNumber('totalSpent', 0, 1000000000) &&
+        (!( 'outstandingBalance' in data) || data.outstandingBalance is number) &&
+        (!( 'active' in data) || data.active is bool) &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidOrder(data) {
+      return hasOnlyAllowedFields(['id', 'orderNumber', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'deliveryFee', 'tax', 'total', 'paidAmount', 'balance', 'orderStatus', 'paymentStatus', 'paymentMethod', 'createdBy', 'deliveryId', 'invoiceId', 'notes', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['orderNumber', 'customerId', 'items', 'subtotal', 'total', 'orderStatus', 'paymentStatus', 'createdBy']) &&
+        validStringLength('orderNumber', 1, 50) &&
+        validStringLength('customerId', 0, 100) &&
+        data.items is list && data.items.size() >= 1 && data.items.size() <= 200 &&
+        data.subtotal is number && data.subtotal >= 0 &&
+        data.total is number && data.total >= 0 &&
+        data.orderStatus in ['pending', 'processing', 'completed', 'delivered', 'cancelled', 'draft'] &&
+        data.paymentStatus in ['paid', 'unpaid', 'partially_paid', 'refunded'] &&
+        validStringLength('createdBy', 1, 128) &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('customerName', 0, 100) &&
+        isValidOptionalString('customerPhone', 0, 30) &&
+        isValidOptionalString('customerAddress', 0, 300) &&
+        isValidOptionalNumber('discount', 0, 100000000) &&
+        isValidOptionalNumber('deliveryFee', 0, 10000000) &&
+        isValidOptionalNumber('tax', 0, 10000000) &&
+        isValidOptionalNumber('paidAmount', 0, 1000000000) &&
+        (!( 'balance' in data) || data.balance is number) &&
+        isValidOptionalString('paymentMethod', 0, 50) &&
+        isValidOptionalString('deliveryId', 0, 100) &&
+        isValidOptionalString('invoiceId', 0, 100) &&
+        isValidOptionalString('notes', 0, 1000) &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidInvoice(data) {
+      return hasOnlyAllowedFields(['id', 'invoiceNumber', 'orderId', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'tax', 'total', 'paidAmount', 'paymentStatus', 'paymentMethod', 'status', 'createdBy', 'issuedAt', 'notes', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['invoiceNumber', 'orderId', 'customerId', 'total', 'subtotal', 'createdBy']) &&
+        validStringLength('invoiceNumber', 1, 50) &&
+        validStringLength('orderId', 1, 100) &&
+        validStringLength('customerId', 0, 100) &&
+        data.subtotal is number && data.subtotal >= 0 &&
+        data.total is number && data.total >= 0 &&
+        validStringLength('createdBy', 1, 128) &&
+        (!( 'items' in data) || (data.items is list && data.items.size() <= 200)) &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('customerName', 0, 100) &&
+        isValidOptionalString('customerPhone', 0, 30) &&
+        isValidOptionalString('customerAddress', 0, 300) &&
+        isValidOptionalNumber('discount', 0, 100000000) &&
+        isValidOptionalNumber('tax', 0, 10000000) &&
+        isValidOptionalNumber('paidAmount', 0, 1000000000) &&
+        isValidOptionalString('paymentStatus', 0, 50) &&
+        isValidOptionalString('paymentMethod', 0, 50) &&
+        (!( 'status' in data) || data.status in ['issued', 'paid', 'partially_paid', 'void', 'cancelled']) &&
+        isValidOptionalString('notes', 0, 1000) &&
+        isValidOptionalTimestamp('issuedAt') &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidDelivery(data) {
+      return hasOnlyAllowedFields(['id', 'orderId', 'customerId', 'status', 'recipientName', 'recipientPhone', 'deliveryAddress', 'trackingNumber', 'courier', 'deliveryFee', 'codAmount', 'notes', 'assignedTo', 'dispatchedAt', 'deliveredAt', 'createdBy', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['orderId', 'customerId', 'status', 'recipientName', 'recipientPhone', 'deliveryAddress']) &&
+        validStringLength('orderId', 1, 100) &&
+        validStringLength('customerId', 0, 100) &&
+        data.status in ['pending', 'assigned', 'picked_up', 'in_transit', 'delivered', 'failed', 'returned', 'cancelled'] &&
+        validStringLength('recipientName', 1, 100) &&
+        validStringLength('recipientPhone', 1, 30) &&
+        validStringLength('deliveryAddress', 1, 300) &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('trackingNumber', 0, 100) &&
+        isValidOptionalString('courier', 0, 100) &&
+        isValidOptionalNumber('deliveryFee', 0, 10000000) &&
+        isValidOptionalNumber('codAmount', 0, 100000000) &&
+        isValidOptionalString('notes', 0, 1000) &&
+        isValidOptionalString('assignedTo', 0, 100) &&
+        isValidOptionalString('createdBy', 0, 128) &&
+        isValidOptionalTimestamp('dispatchedAt') &&
+        isValidOptionalTimestamp('deliveredAt') &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidStockMovement(data) {
+      return hasOnlyAllowedFields(['id', 'productId', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'createdBy', 'orderId', 'reference', 'note', 'createdAt']) &&
+        hasRequiredFields(['productId', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'createdBy', 'createdAt']) &&
+        validStringLength('productId', 1, 100) &&
+        data.type in ['in', 'out', 'adjustment', 'return', 'sale', 'transfer'] &&
+        data.quantity is number &&
+        data.previousStock is number &&
+        data.newStock is number &&
+        validStringLength('reason', 1, 200) &&
+        validStringLength('createdBy', 1, 128) &&
+        data.createdAt is timestamp &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('orderId', 0, 100) &&
+        isValidOptionalString('reference', 0, 100) &&
+        isValidOptionalString('note', 0, 500);
+    }
+
+    function isValidExpense(data) {
+      return hasOnlyAllowedFields(['id', 'title', 'amount', 'category', 'date', 'createdBy', 'description', 'paymentMethod', 'receiptUrl', 'vendor', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['title', 'amount', 'category', 'date', 'createdBy']) &&
+        validStringLength('title', 1, 150) &&
+        data.amount is number && data.amount > 0 &&
+        data.category in ['utilities', 'rent', 'salaries', 'supplies', 'marketing', 'delivery', 'maintenance', 'inventory', 'other'] &&
+        data.date is timestamp &&
+        validStringLength('createdBy', 1, 128) &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('description', 0, 1000) &&
+        isValidOptionalString('paymentMethod', 0, 50) &&
+        isValidOptionalString('receiptUrl', 0, 1000) &&
+        isValidOptionalString('vendor', 0, 100) &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    function isValidActivityLog(data) {
+      return hasOnlyAllowedFields(['id', 'action', 'details', 'userId', 'userName', 'entityType', 'entityId', 'ipAddress', 'metadata', 'createdAt']) &&
+        hasRequiredFields(['action', 'details', 'userId', 'userName', 'createdAt']) &&
+        validStringLength('action', 1, 100) &&
+        validStringLength('details', 1, 500) &&
+        data.userId is string && data.userId == request.auth.uid &&
+        validStringLength('userName', 1, 100) &&
+        data.createdAt is timestamp &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('entityType', 0, 50) &&
+        isValidOptionalString('entityId', 0, 100) &&
+        isValidOptionalString('ipAddress', 0, 50) &&
+        (!( 'metadata' in data) || data.metadata is map);
+    }
+
+    function isValidBusinessSettings(data) {
+      return hasOnlyAllowedFields(['storeName', 'tagline', 'phone', 'email', 'address', 'city', 'country', 'postalCode', 'currency', 'socialLinks', 'taxRate', 'receiptFooter', 'logoUrl', 'updatedAt', 'updatedBy']) &&
+        hasRequiredFields(['storeName', 'phone', 'email']) &&
+        validStringLength('storeName', 1, 100) &&
+        validStringLength('phone', 1, 30) &&
+        validStringLength('email', 5, 100) &&
+        isValidEmail(data.email) &&
+        isValidOptionalString('tagline', 0, 200) &&
+        isValidOptionalString('address', 0, 300) &&
+        isValidOptionalString('city', 0, 100) &&
+        isValidOptionalString('country', 0, 100) &&
+        isValidOptionalString('postalCode', 0, 20) &&
+        isValidOptionalString('currency', 0, 10) &&
+        isValidOptionalNumber('taxRate', 0, 100) &&
+        isValidOptionalString('receiptFooter', 0, 500) &&
+        isValidOptionalString('logoUrl', 0, 1000) &&
+        isValidOptionalString('updatedBy', 0, 128) &&
+        (!( 'socialLinks' in data) || data.socialLinks is map) &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
+    // ===============================================================
+    // Collection Security Rules
+    // ===============================================================
+
+    // 1. Users Collection
+    match /users/{uid} {
+      // User data separation: Users read their own document; Admins can read all users
+      allow read: if isOwner(uid) || isAdmin();
+
+      // Creation: Admins can create any user profile;
+      // New self-registering users can create their own doc with role 'staff' (or bootstrap admin)
+      allow create: if isValidUser(request.resource.data) && (
+        isAdmin() ||
+        (isOwner(uid) && request.resource.data.uid == uid && (
+          (isBootstrapAdmin() && request.resource.data.role == 'admin') ||
+          (request.resource.data.role == 'staff' && request.resource.data.email == request.auth.token.email)
+        ))
+      );
+
+      // Updates: Admins can manage all users.
+      // Active users can only update non-privilege profile fields (cannot change uid, role, active status, or createdAt)
+      allow update: if isValidUser(request.resource.data) && (
+        (isAdmin() && areImmutableFieldsUnchanged(['uid', 'createdAt'])) ||
+        (isOwner(uid) && resource.data.active == true &&
+         areImmutableFieldsUnchanged(['uid', 'email', 'role', 'active', 'createdAt']) &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.active == resource.data.active)
+      );
+
+      // Only administrators can delete user accounts (prevent self-lockout)
+      allow delete: if isAdmin() && request.auth.uid != uid;
+    }
+
+    // 2. Products Collection
+    match /products/{productId} {
+      // Active staff and admins can browse products
+      allow read: if isStaff();
+
+      // Active staff and admins can create/update catalog items
+      allow create: if isStaff() && isValidProduct(request.resource.data);
+
+      allow update: if isStaff() && isValidProduct(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdAt']);
+
+      // Only administrators can delete product documents
+      allow delete: if isAdmin();
+    }
+
+    // 3. Customers Collection
+    match /customers/{customerId} {
+      // Active staff and admins can view customers
+      allow read: if isStaff();
+
+      // Active staff and admins can register and update customer profiles
+      allow create: if isStaff() && isValidCustomer(request.resource.data);
+
+      allow update: if isStaff() && isValidCustomer(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdAt']);
+
+      // Only administrators can delete customer records
+      allow delete: if isAdmin();
+    }
+
+    // 4. Orders Collection
+    match /orders/{orderId} {
+      // Active staff and admins can view orders
+      allow read: if isStaff();
+
+      // Orders must be created by the authenticated active user
+      allow create: if isStaff() &&
+        isValidOrder(request.resource.data) &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Staff and admins can update orders;
+      // Core fields remain immutable, and cancellation is restricted to Admins
+      allow update: if isStaff() &&
+        isValidOrder(request.resource.data) &&
+        areImmutableFieldsUnchanged(['orderNumber', 'createdBy', 'createdAt']) &&
+        (request.resource.data.orderStatus != 'cancelled' || resource.data.orderStatus == 'cancelled' || isAdmin());
+
+      // Only administrators can cancel/delete order documents
+      allow delete: if isAdmin();
+    }
+
+    // 5. Invoices Collection
+    match /invoices/{invoiceId} {
+      // Active staff and admins can view invoices
+      allow read: if isStaff();
+
+      // Invoices can be created by active staff/admin with verifiable creator identity
+      allow create: if isStaff() &&
+        isValidInvoice(request.resource.data) &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Invoices are immutable once issued: Staff cannot edit issued invoices;
+      // Admins may make corrections, but financial linkage fields remain immutable
+      allow update: if isAdmin() &&
+        isValidInvoice(request.resource.data) &&
+        areImmutableFieldsUnchanged(['invoiceNumber', 'orderId', 'createdBy', 'issuedAt', 'createdAt']);
+
+      // Invoices cannot be deleted to preserve financial audit history (voiding is done via update)
+      allow delete: if false;
+    }
+
+    // 6. Deliveries Collection
+    match /deliveries/{deliveryId} {
+      // Active staff and admins can view deliveries
+      allow read: if isStaff();
+
+      // Active staff and admins can dispatch and manage deliveries
+      allow create: if isStaff() && isValidDelivery(request.resource.data);
+
+      allow update: if isStaff() && isValidDelivery(request.resource.data) &&
+        areImmutableFieldsUnchanged(['orderId', 'createdAt']);
+
+      // Only administrators can delete delivery records
+      allow delete: if isAdmin();
+    }
+
+    // 7. Stock Movements Collection (Immutable Audit Records)
+    match /stock_movements/{movementId} {
+      // Active staff and admins can audit inventory history
+      allow read: if isStaff();
+
+      // Active staff and admins can record new stock transactions
+      allow create: if isStaff() &&
+        isValidStockMovement(request.resource.data) &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Audit logs are strictly immutable: no updates or deletions allowed
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // 8. Expenses Collection (Financial Restricted Ledger)
+    match /expenses/{expenseId} {
+      // Restricted: Only administrators can read expenses
+      allow read: if isAdmin();
+
+      // Restricted: Only administrators can create expenses
+      allow create: if isAdmin() &&
+        isValidExpense(request.resource.data) &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Restricted: Only administrators can update expenses (creation metadata immutable)
+      allow update: if isAdmin() &&
+        isValidExpense(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdBy', 'createdAt']);
+
+      // Restricted: Only administrators can delete expenses
+      allow delete: if isAdmin();
+    }
+
+    // 9. Activity Logs Collection (Immutable Audit Trail)
+    match /activity_logs/{logId} {
+      // Auditing logs are readable only by administrators
+      allow read: if isAdmin();
+
+      // Any authenticated active user can log their activity
+      allow create: if isActive() &&
+        isValidActivityLog(request.resource.data);
+
+      // System activity logs are strictly immutable
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // 10. Settings Collection
+    match /settings/{settingId} {
+      // Active users can read business settings and invoice counter; other settings admin-only
+      allow read: if isActive() && (
+        settingId in ['business', 'invoice_counter'] || isAdmin()
+      );
+
+      // Business Settings: Only admins can configure business details
+      // Invoice Counter: Can be initialized by admin (or bootstrapped on 1 by staff)
+      allow create: if (
+        (settingId == 'business' && isAdmin() && isValidBusinessSettings(request.resource.data)) ||
+        (settingId == 'invoice_counter' && (isAdmin() || (isStaff() && request.resource.data.count == 1))) ||
+        (settingId != 'business' && settingId != 'invoice_counter' && isAdmin())
+      );
+
+      // Updates:
+      // - Business settings: Admin only
+      // - Invoice counter: Admin can modify or staff can atomically increment (+1) during checkout
+      allow update: if (
+        (settingId == 'business' && isAdmin() && isValidBusinessSettings(request.resource.data)) ||
+        (settingId == 'invoice_counter' && (
+          (isAdmin() && request.resource.data.count is int && request.resource.data.count >= 0) ||
+          (isStaff() &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count', 'lastInvoiceNumber', 'updatedAt', 'updatedBy']) &&
+           request.resource.data.count is int &&
+           request.resource.data.count == resource.data.count + 1)
+        )) ||
+        (settingId != 'business' && settingId != 'invoice_counter' && isAdmin())
+      );
+
+      // Critical settings documents cannot be deleted
+      allow delete: if settingId != 'business' && settingId != 'invoice_counter' && isAdmin();
+    }
+
+    // ===============================================================
+    // Default Deny Fallback
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
