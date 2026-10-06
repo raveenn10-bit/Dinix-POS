@@ -14,9 +14,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   // Mode: 'signin' | 'setup_admin'
   const [authMode, setAuthMode] = useState<'signin' | 'setup_admin'>('signin');
 
-  // Sign In Fields
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // Sign In Fields (Prefilled with official Danix Admin credentials)
+  const [email, setEmail] = useState('danixlkstore@gmail.com');
+  const [password, setPassword] = useState('Danix@2026Admin');
   const [rememberMe, setRememberMe] = useState(true);
 
   // Setup Admin Fields

@@ -11,7 +11,9 @@ export const isFirebaseConfigured = Boolean(
   rawApiKey &&
   rawProjectId &&
   !rawApiKey.includes('your_api_key') &&
-  !rawProjectId.includes('your_project_id')
+  !rawProjectId.includes('your_project_id') &&
+  !rawApiKey.includes('Placeholder') &&
+  !rawApiKey.includes('Demo')
 );
 
 const firebaseConfig = {
