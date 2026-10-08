@@ -154,8 +154,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         {/* Brand Header */}
         <div className="flex h-16 items-center justify-between border-b border-navy-800 px-5">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white p-0.5 shadow-md">
+          <div className="group-brand flex items-center gap-3 cursor-pointer select-none">
+            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white p-0.5 shadow-md animate-logo-glow transition-transform duration-300 hover:scale-105 hover:rotate-1">
               <img
                 src="/logo.jpg"
                 alt="Danix POS Logo"
@@ -167,15 +167,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold tracking-wider text-white text-base">
-                  DANIX
+              <div className="flex items-center gap-1.5 font-sans leading-none">
+                <span className="font-extrabold tracking-wider text-white text-base flex">
+                  {'DANIX'.split('').map((char, index) => (
+                    <span
+                      key={index}
+                      className="inline-block animate-letter-bounce transition-transform hover:-translate-y-1.5"
+                      style={{ animationDelay: `${index * 0.12}s` }}
+                    >
+                      {char}
+                    </span>
+                  ))}
                 </span>
-                <span className="font-bold text-brand-500 text-base">POS</span>
+                <span className="font-bold text-brand-500 text-base flex">
+                  {'POS'.split('').map((char, index) => (
+                    <span
+                      key={index}
+                      className="inline-block animate-letter-bounce transition-transform hover:-translate-y-1.5"
+                      style={{ animationDelay: `${(index + 5) * 0.12}s` }}
+                    >
+                      {char}
+                    </span>
+                  ))}
+                </span>
               </div>
-              <p className="text-[10px] uppercase tracking-widest text-navy-300 font-medium">
-                Online Management
-              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                </span>
+                <p className="text-[10px] uppercase tracking-widest text-navy-300 font-medium">
+                  Online Management
+                </p>
+              </div>
             </div>
           </div>
 
