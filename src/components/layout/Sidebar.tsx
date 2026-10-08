@@ -19,6 +19,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { UserRole } from '@/types';
+import {
+  DanixLogoAssembly,
+  DanixLogoAssemblyHandle,
+} from '@/components/brand/DanixLogoAssembly';
 
 interface SidebarItem {
   name: string;
@@ -113,6 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
 }) => {
   const { userProfile, role, isAdmin, logout } = useAuth();
+  const sidebarLogoRef = React.useRef<DanixLogoAssemblyHandle>(null);
 
   const handleNavClick = (href: string) => {
     if (onNavigate) {
@@ -154,16 +159,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         {/* Brand Header */}
         <div className="flex h-16 items-center justify-between border-b border-navy-800 px-5">
-          <div className="group-brand flex items-center gap-3 cursor-pointer select-none">
-            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white p-0.5 shadow-md animate-logo-glow transition-transform duration-300 hover:scale-105 hover:rotate-1">
-              <img
-                src="/logo.jpg"
-                alt="Danix POS Logo"
-                className="h-full w-full object-contain"
-                onError={(e) => {
-                  // Fallback to text avatar if logo missing
-                  e.currentTarget.style.display = 'none';
-                }}
+          <div
+            onClick={() => {
+              sidebarLogoRef.current?.restart();
+              handleNavClick('/dashboard');
+            }}
+            onMouseEnter={() => {
+              sidebarLogoRef.current?.restart();
+            }}
+            className="group-brand flex items-center gap-3 cursor-pointer select-none"
+            title="Danix POS Dashboard • Click or hover to animate"
+          >
+            {/* Option 4: Sidebar Interactive Micro-Assembly Logo */}
+            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-navy-950 p-1 shadow-md shadow-brand-500/10 transition-transform duration-300 hover:scale-110 active:scale-95 group">
+              <DanixLogoAssembly
+                ref={sidebarLogoRef}
+                width={36}
+                height={36}
+                showText={false}
+                compact={true}
+                theme="dark"
+                speed={1.25}
+                autoPlay={true}
               />
             </div>
             <div>

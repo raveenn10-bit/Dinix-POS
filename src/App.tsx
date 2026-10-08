@@ -18,6 +18,7 @@ import { UsersPage } from '@/pages/users/UsersPage';
 import { ActivityLogsPage } from '@/pages/activity/ActivityLogsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { LogoAnimationPreview } from '@/pages/preview/LogoAnimationPreview';
+import { DanixSplashScreen } from '@/components/brand/DanixSplashScreen';
 import { Customer } from '@/types';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
@@ -56,6 +57,7 @@ const MainApp: React.FC = () => {
   const { userProfile, loading } = useAuth();
   const [currentRoute, setCurrentRoute] = useState<string>('/dashboard');
   const [selectedCustomerForOrder, setSelectedCustomerForOrder] = useState<Customer | null>(null);
+  const [splashDismissed, setSplashDismissed] = useState<boolean>(false);
 
   // Sync with browser url if available
   useEffect(() => {
@@ -74,20 +76,30 @@ const MainApp: React.FC = () => {
     window.history.pushState({}, '', path);
   };
 
+  // Standalone Logo Assembly Preview Studio (does not modify existing POS app)
+  if (currentRoute === '/logo-preview' || currentRoute === '/preview/logo') {
+    return <LogoAnimationPreview />;
+  }
+
+  // Option 2: Cinematic Splash Screen on App Open / Initial Loading
+  if (!splashDismissed) {
+    return (
+      <DanixSplashScreen
+        onFinish={() => setSplashDismissed(true)}
+        isLoadingData={loading}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-900">
         <div className="flex flex-col items-center gap-3">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-          <p className="text-xs font-semibold text-slate-300">Loading Danix POS...</p>
+          <p className="text-xs font-semibold text-slate-300">Connecting to Danix POS...</p>
         </div>
       </div>
     );
-  }
-
-  // Standalone Logo Assembly Preview Studio (does not modify existing POS app)
-  if (currentRoute === '/logo-preview' || currentRoute === '/preview/logo') {
-    return <LogoAnimationPreview />;
   }
 
   // Auth pages routing

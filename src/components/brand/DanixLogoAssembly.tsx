@@ -23,6 +23,7 @@ export interface DanixLogoAssemblyProps {
   speed?: number;
   reducedMotion?: boolean;
   showText?: boolean;
+  compact?: boolean;
   theme?: 'dark' | 'light' | 'original';
   onComplete?: () => void;
   onUpdate?: (progress: number) => void;
@@ -49,6 +50,7 @@ export const DanixLogoAssembly = forwardRef<DanixLogoAssemblyHandle, DanixLogoAs
       speed = 1.0,
       reducedMotion = false,
       showText = true,
+      compact = false,
       theme = 'dark',
       onComplete,
       onUpdate,
@@ -538,7 +540,7 @@ export const DanixLogoAssembly = forwardRef<DanixLogoAssemblyHandle, DanixLogoAs
         style={{ width, height }}
       >
         <svg
-          viewBox={LOGO_VIEWBOX}
+          viewBox={compact ? '210 160 560 540' : LOGO_VIEWBOX}
           className="w-full h-auto overflow-visible"
           style={{ background: 'transparent' }}
           preserveAspectRatio="xMidYMid meet"

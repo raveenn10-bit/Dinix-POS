@@ -28,6 +28,8 @@ import {
   DashboardMetrics,
 } from '@/lib/dataService';
 import { Order, Product, ActivityLog } from '@/types';
+import { DanixLogoAssembly } from '@/components/brand/DanixLogoAssembly';
+import { DanixLogoModal } from '@/components/brand/DanixLogoModal';
 
 interface DashboardPageProps {
   onNavigate: (path: string) => void;
@@ -43,6 +45,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [restockingId, setRestockingId] = useState<string | null>(null);
+  const [showLogoModal, setShowLogoModal] = useState<boolean>(false);
 
   const loadData = async (force: boolean = false) => {
     setIsLoading(true);
@@ -134,9 +137,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       {/* Top Banner / Greetings */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-navy-950 via-navy-900 to-navy-800 p-6 sm:p-8 text-white shadow-xl">
         <div className="absolute -right-12 -top-12 h-64 w-64 rounded-full bg-brand-500/15 blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2 mb-2">
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="flex-1 max-w-2xl">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-500/20 px-3 py-1 text-xs font-semibold text-brand-300 border border-brand-500/30">
                 <Sparkles className="h-3.5 w-3.5" />
                 Danix Command Center
@@ -151,26 +154,61 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <p className="mt-1 text-sm text-slate-300">
               Here is your Danix POS operational summary. All systems online and ready for orders & dispatch.
             </p>
+
+            <div className="mt-4 flex items-center gap-2 flex-wrap">
+              {/* Option 3: Logo Intro Button */}
+              <button
+                type="button"
+                onClick={() => setShowLogoModal(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-brand-500/40 bg-brand-500/15 px-3.5 py-2 text-xs font-bold text-brand-300 hover:bg-brand-500/25 hover:text-white transition-all shadow-sm"
+                title="Watch Full Cinematic Logo Intro"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-brand-400 animate-pulse" />
+                <span>🎬 Logo Intro</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => loadData(true)}
+                disabled={isLoading}
+                className="inline-flex items-center gap-2 rounded-xl border border-navy-700 bg-navy-800/80 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-navy-700 transition-colors shadow-sm"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh Metrics</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigate('/pos')}
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-brand-500/30 hover:bg-brand-600 transition-colors"
+              >
+                <ShoppingBag className="h-4 w-4" />
+                <span>POS Terminal</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => loadData(true)}
-              disabled={isLoading}
-              className="inline-flex items-center gap-2 rounded-xl border border-navy-700 bg-navy-800/80 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-navy-700 transition-colors shadow-sm"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh Metrics</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate('/pos')}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-brand-500/30 hover:bg-brand-600 transition-colors"
-            >
-              <ShoppingBag className="h-4 w-4" />
-              <span>POS Terminal</span>
-            </button>
+          {/* Option 1: Embedded Cinematic Logo in Welcome Banner */}
+          <div
+            onClick={() => setShowLogoModal(true)}
+            className="group hidden sm:flex flex-col items-center justify-center p-3 sm:p-4 rounded-2xl bg-navy-950/40 border border-white/10 backdrop-blur-sm shrink-0 self-center lg:self-auto hover:border-brand-500/50 hover:bg-navy-950/60 transition-all cursor-pointer shadow-lg"
+            title="Click to view full cinematic animation"
+          >
+            <div className="w-32 h-28 sm:w-36 sm:h-32 flex items-center justify-center overflow-hidden">
+              <DanixLogoAssembly
+                width={130}
+                height={120}
+                showText={false}
+                compact={true}
+                theme="dark"
+                speed={1.05}
+                autoPlay={true}
+              />
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400 group-hover:text-brand-300 transition-colors">
+              <span className="font-extrabold tracking-wider">DANIX POS</span>
+              <span className="text-[9px] opacity-75">• Click to expand</span>
+            </div>
           </div>
         </div>
       </div>
@@ -597,6 +635,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </div>
         </div>
       </div>
+
+      {/* Option 3: Cinematic Danix Logo Modal */}
+      <DanixLogoModal
+        isOpen={showLogoModal}
+        onClose={() => setShowLogoModal(false)}
+      />
     </div>
   );
 };
