@@ -13,6 +13,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "firebase": "^10.14.1",
+    "gsap": "^3.15.0",
     "jsbarcode": "^3.11.6",
     "lucide-react": "^0.475.0",
     "qrcode": "^1.5.4",

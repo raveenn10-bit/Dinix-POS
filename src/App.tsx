@@ -17,6 +17,7 @@ import { ReportsPage } from '@/pages/reports/ReportsPage';
 import { UsersPage } from '@/pages/users/UsersPage';
 import { ActivityLogsPage } from '@/pages/activity/ActivityLogsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { LogoAnimationPreview } from '@/pages/preview/LogoAnimationPreview';
 import { Customer } from '@/types';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
@@ -82,6 +83,11 @@ const MainApp: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // Standalone Logo Assembly Preview Studio (does not modify existing POS app)
+  if (currentRoute === '/logo-preview' || currentRoute === '/preview/logo') {
+    return <LogoAnimationPreview />;
   }
 
   // Auth pages routing
