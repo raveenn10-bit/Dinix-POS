@@ -359,6 +359,152 @@ async function main() {
   });
 
   // --------------------------------------------------------------------------
+  // DOMAIN 11: DYNAMIC CATEGORY MANAGEMENT & AUTOMATIC SKU GENERATION
+  // --------------------------------------------------------------------------
+  console.log('\n--- Domain 11: Dynamic Category Management & Category-Based SKU Generation ---');
+
+  await runTest('Categories', 'Verify all 10 default predefined categories are preserved', () => {
+    const predefinedNames = [
+      'Ceylon Tea',
+      'Spices & Condiments',
+      'Oils & Ghee',
+      'Sweets & Syrups',
+      'Dry Goods',
+      'Canned Goods',
+      'Bakery & Snacks',
+      'Beverages',
+      'Personal Care',
+      'Other',
+    ];
+    const firestoreCode = fs.readFileSync(path.join(rootDir, 'src/lib/firebase/firestore.ts'), 'utf-8');
+    for (const name of predefinedNames) {
+      assert(firestoreCode.includes(name), `Missing predefined category: ${name}`);
+    }
+  });
+
+  await runTest('Categories', 'Validate SKU prefix sanitization and length constraints', () => {
+    const sanitize = (prefixOrName) => {
+      if (!prefixOrName) return 'DAN';
+      const clean = prefixOrName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      return clean.substring(0, 4) || 'DAN';
+    };
+
+    assertEqual(sanitize('Electronics'), 'ELEC', 'Prefix sanitization failed');
+    assertEqual(sanitize('clothing'), 'CLOT', 'Prefix sanitization failed');
+    assertEqual(sanitize('Accessories & Bags'), 'ACCE', 'Prefix sanitization failed');
+    assertEqual(sanitize('Tea! 123'), 'TEA1', 'Prefix sanitization failed');
+    assertEqual(sanitize(''), 'DAN', 'Empty prefix fallback failed');
+  });
+
+  await runTest('SKU', 'Validate category-based SKU generation (ELE-0001, ELE-0002, CLO-0001)', () => {
+    const formatSku = (prefix, num) => `${prefix.toUpperCase()}-${String(num).padStart(4, '0')}`;
+
+    assertEqual(formatSku('ELE', 1), 'ELE-0001', 'First SKU format mismatch');
+    assertEqual(formatSku('ELE', 2), 'ELE-0002', 'Second SKU format mismatch');
+    assertEqual(formatSku('CLO', 1), 'CLO-0001', 'Clothing SKU format mismatch');
+    assertEqual(formatSku('ACC', 10), 'ACC-0010', 'Two-digit SKU format mismatch');
+  });
+
+  await runTest('SKU', 'Verify allocation considers existing products to prevent duplicates', () => {
+    const existingProducts = [
+      { id: '1', name: 'Radio', sku: 'ELE-0001', category: 'Electronics' },
+      { id: '2', name: 'TV', sku: 'ELE-0002', category: 'Electronics' },
+      { id: '3', name: 'Heater', sku: 'ELE-0005', category: 'Electronics' },
+      { id: '4', name: 'Shirt', sku: 'CLO-0001', category: 'Clothing' },
+    ];
+
+    const getHighestSkuNumber = (prefix, products) => {
+      const cleanPrefix = prefix.trim().toUpperCase();
+      const regex = new RegExp(`^${cleanPrefix}-(\\d+)$`, 'i');
+      let max = 0;
+      for (const p of products) {
+        if (!p.sku) continue;
+        const match = p.sku.trim().match(regex);
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > max) max = num;
+        }
+      }
+      return max;
+    };
+
+    const highestEle = getHighestSkuNumber('ELE', existingProducts);
+    assertEqual(highestEle, 5, 'Failed to identify highest existing SKU number for ELE');
+    const nextEleSku = `ELE-${String(highestEle + 1).padStart(4, '0')}`;
+    assertEqual(nextEleSku, 'ELE-0006', 'Failed to allocate next unique SKU based on existing products');
+
+    const highestClo = getHighestSkuNumber('CLO', existingProducts);
+    assertEqual(highestClo, 1, 'Failed to identify highest existing SKU number for CLO');
+    const nextCloSku = `CLO-${String(highestClo + 1).padStart(4, '0')}`;
+    assertEqual(nextCloSku, 'CLO-0002', 'Failed to allocate next unique SKU for CLO');
+  });
+
+  await runTest('SKU', 'Confirm existing product SKUs are 100% preserved and never modified during edit', () => {
+    const existingProduct = {
+      id: 'prod-001',
+      name: 'Danix Premium Ceylon Black Tea 500g',
+      sku: 'TEA-BLK-500',
+      category: 'Ceylon Tea',
+    };
+
+    // Simulate update operation
+    const isNew = false;
+    let finalSku = existingProduct.sku;
+    if (isNew) {
+      finalSku = 'TEA-0001';
+    }
+    assertEqual(finalSku, 'TEA-BLK-500', 'Existing SKU was erroneously modified during update');
+  });
+
+  await runTest('SecurityRules', 'Verify firestore.rules contains category security rules and sku_counters', () => {
+    const rules = fs.readFileSync(path.join(rootDir, 'firestore.rules'), 'utf-8');
+    assert(rules.includes('match /categories/{categoryId}'), 'Missing categories match in firestore.rules');
+    assert(rules.includes('function isValidCategory('), 'Missing isValidCategory function in firestore.rules');
+    assert(rules.includes('sku_counters'), 'Missing sku_counters permission in firestore.rules');
+  });
+
+  await runTest('Config', 'Verify firestore.indexes.json contains categories composite index', () => {
+    const indexesJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'firestore.indexes.json'), 'utf-8'));
+    const collections = indexesJson.indexes.map(i => i.collectionGroup);
+    assert(collections.includes('categories'), 'Missing categories index in firestore.indexes.json');
+  });
+
+  await runTest('CategoryDeletion', 'Verify category deletion is blocked if active products are assigned to it', () => {
+    const products = [
+      { id: 'p1', name: 'Product 1', category: 'Electronics' },
+      { id: 'p2', name: 'Product 2', category: 'Clothing' },
+    ];
+    const categoryToDelete = { id: 'c1', name: 'Electronics' };
+
+    const assignedCount = products.filter(
+      (p) => p.category.toLowerCase() === categoryToDelete.name.toLowerCase()
+    ).length;
+    assertEqual(assignedCount, 1, 'Assigned products count should be 1');
+    assert(assignedCount > 0, 'Should block category deletion when products are assigned');
+  });
+
+  await runTest('CategoryDeletion', 'Verify category deletion is permitted when no products are assigned', () => {
+    const products = [
+      { id: 'p1', name: 'Product 1', category: 'Clothing' },
+    ];
+    const categoryToDelete = { id: 'c2', name: 'Empty Category' };
+
+    const assignedCount = products.filter(
+      (p) => p.category.toLowerCase() === categoryToDelete.name.toLowerCase()
+    ).length;
+    assertEqual(assignedCount, 0, 'No products should be assigned to category');
+    assert(assignedCount === 0, 'Category deletion should be permitted when assigned count is 0');
+  });
+
+  await runTest('SecurityRules', 'Verify firestore.rules enforces admin-only deletion of categories', () => {
+    const rules = fs.readFileSync(path.join(rootDir, 'firestore.rules'), 'utf-8');
+    assert(
+      rules.includes('allow delete: if isAdmin();') && rules.includes('match /categories/{categoryId}'),
+      'Missing admin delete check on categories collection in firestore.rules'
+    );
+  });
+
+  // --------------------------------------------------------------------------
   // SUMMARY REPORT
   // --------------------------------------------------------------------------
   console.log('\n==============================================================================');

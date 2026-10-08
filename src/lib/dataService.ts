@@ -39,6 +39,14 @@ import {
   INITIAL_STAFF_USERS,
 } from './mockData';
 import { logActivity, recordStockMovement } from './firebase/firestore';
+import {
+  getLiveProducts,
+  getLiveOrders,
+  getLiveDeliveries,
+  getLiveCustomers,
+  registerCacheInvalidator,
+  invalidateDataCache,
+} from './dataStore';
 
 // LocalStorage Persistence Keys
 const LS_KEYS = {
@@ -52,6 +60,81 @@ const LS_KEYS = {
   SETTINGS: 'danix_pos_business_settings',
   USERS: 'danix_pos_users',
 };
+
+// ----------------------------------------------------
+// SMART IN-MEMORY TTL CACHE (PREVENTS FIRESTORE QUOTA SPIKES)
+// ----------------------------------------------------
+
+interface CacheItem<T> {
+  data: T;
+  timestamp: number;
+}
+
+const CACHE_TTL = {
+  DASHBOARD: 90 * 1000,     // 90 seconds
+  ORDERS: 60 * 1000,        // 60 seconds
+  LOW_STOCK: 90 * 1000,     // 90 seconds
+  REPORTS: 120 * 1000,      // 2 minutes
+  EXPENSES: 120 * 1000,     // 2 minutes
+  ACTIVITY: 45 * 1000,      // 45 seconds
+  SETTINGS: 300 * 1000,     // 5 minutes
+};
+
+const serviceCache: {
+  dashboardMetrics?: CacheItem<DashboardMetrics>;
+  recentOrders?: CacheItem<Order[]>;
+  lowStockProducts?: CacheItem<Product[]>;
+  activityLogs?: { [key: string]: CacheItem<ActivityLog[]> };
+  expenses?: CacheItem<Expense[]>;
+  salesReports?: { [period: string]: CacheItem<SalesReportSummary> };
+  inventoryValuation?: CacheItem<InventoryValuation>;
+  courierPerformance?: CacheItem<CourierPerformance>;
+  profitLoss?: CacheItem<ProfitLossSummary>;
+  businessSettings?: CacheItem<BusinessSettings>;
+} = {};
+
+export function clearDataServiceCache(domain?: string): void {
+  if (!domain || domain === 'all') {
+    serviceCache.dashboardMetrics = undefined;
+    serviceCache.recentOrders = undefined;
+    serviceCache.lowStockProducts = undefined;
+    serviceCache.activityLogs = undefined;
+    serviceCache.expenses = undefined;
+    serviceCache.salesReports = undefined;
+    serviceCache.inventoryValuation = undefined;
+    serviceCache.courierPerformance = undefined;
+    serviceCache.profitLoss = undefined;
+    return;
+  }
+  if (domain === 'orders') {
+    serviceCache.dashboardMetrics = undefined;
+    serviceCache.recentOrders = undefined;
+    serviceCache.salesReports = undefined;
+    serviceCache.profitLoss = undefined;
+  }
+  if (domain === 'products') {
+    serviceCache.dashboardMetrics = undefined;
+    serviceCache.lowStockProducts = undefined;
+    serviceCache.inventoryValuation = undefined;
+  }
+  if (domain === 'deliveries') {
+    serviceCache.dashboardMetrics = undefined;
+    serviceCache.courierPerformance = undefined;
+  }
+  if (domain === 'expenses') {
+    serviceCache.expenses = undefined;
+    serviceCache.profitLoss = undefined;
+  }
+  if (domain === 'settings') {
+    serviceCache.businessSettings = undefined;
+  }
+  if (domain === 'logs') {
+    serviceCache.activityLogs = undefined;
+  }
+}
+
+// Automatically clear caches on dataStore mutations
+registerCacheInvalidator(clearDataServiceCache);
 
 // Helper: load from localStorage with initial fallback
 function getLocalCollection<T>(key: string, initialFallback: T[]): T[] {
@@ -111,47 +194,67 @@ export interface DashboardMetrics {
   totalCustomersCount: number;
 }
 
-export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
-  if (!isFirebaseConfigured) {
-    const orders = getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
-    const products = getLocalCollection<Product>(LS_KEYS.PRODUCTS, INITIAL_PRODUCTS);
-    const customers = getLocalCollection<Customer>(LS_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
-    const deliveries = getLocalCollection<Delivery>(LS_KEYS.DELIVERIES, INITIAL_DELIVERIES);
+export async function fetchDashboardMetrics(forceRefresh: boolean = false): Promise<DashboardMetrics> {
+  const nowTs = Date.now();
+  if (
+    !forceRefresh &&
+    serviceCache.dashboardMetrics &&
+    nowTs - serviceCache.dashboardMetrics.timestamp < CACHE_TTL.DASHBOARD
+  ) {
+    return serviceCache.dashboardMetrics.data;
+  }
 
+  // Quota optimization: Check if live collections are already warm in memory
+  const liveOrders = getLiveOrders();
+  const liveProducts = getLiveProducts();
+  const liveDeliveries = getLiveDeliveries();
+  const liveCustomers = getLiveCustomers();
+
+  if (liveOrders && liveProducts && liveDeliveries && liveCustomers) {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-    const todayOrders = orders.filter((o) => Number(o.createdAt) >= startOfToday);
+    const todayOrders = liveOrders.filter((o) => Number(o.createdAt) >= startOfToday);
     const todaySales = todayOrders.reduce((sum, o) => sum + (o.paymentStatus === 'paid' ? o.total : 0), 0);
-
-    const totalRevenue = orders.reduce((sum, o) => sum + (o.paymentStatus === 'paid' ? o.total : 0), 0);
-    const pendingOrdersCount = orders.filter((o) => o.orderStatus === 'pending' || o.paymentStatus === 'unpaid').length;
-    const activeDeliveriesCount = deliveries.filter(
+    const totalRevenue = liveOrders.reduce((sum, o) => sum + (o.paymentStatus === 'paid' ? o.total : 0), 0);
+    const pendingOrdersCount = liveOrders.filter((o) => o.orderStatus === 'pending' || o.paymentStatus === 'unpaid').length;
+    const activeDeliveriesCount = liveDeliveries.filter(
       (d) => d.status === 'in_transit' || d.status === 'dispatched' || d.status === 'pending' || d.status === 'ready'
     ).length;
-    const lowStockCount = products.filter((p) => p.stockQuantity <= p.minimumStock).length;
+    const lowStockCount = liveProducts.filter((p) => (p.stockQuantity ?? 0) <= (p.minimumStock ?? 0)).length;
 
-    return {
+    const res: DashboardMetrics = {
       todaySales,
       totalRevenue,
-      totalOrdersCount: orders.length,
+      totalOrdersCount: liveOrders.length,
       pendingOrdersCount,
       activeDeliveriesCount,
       lowStockCount,
-      totalProductsCount: products.length,
-      totalCustomersCount: customers.length,
+      totalProductsCount: liveProducts.length,
+      totalCustomersCount: liveCustomers.length,
     };
+    serviceCache.dashboardMetrics = { data: res, timestamp: nowTs };
+    return res;
+  }
+
+  if (!isFirebaseConfigured) {
+    const res = fetchDashboardMetricsOffline();
+    serviceCache.dashboardMetrics = { data: res, timestamp: nowTs };
+    return res;
   }
 
   try {
-    // Optimized queries using limits and counts
-    const productsSnap = await getDocs(query(collection(db, 'products'), limit(250)));
+    // Optimized bounded queries with caching
+    const [productsSnap, ordersSnap, deliveriesSnap, customersSnap] = await Promise.all([
+      getDocs(query(collection(db, 'products'), limit(150))),
+      getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(100))),
+      getDocs(query(collection(db, 'deliveries'), limit(100))),
+      getDocs(query(collection(db, 'customers'), limit(100))),
+    ]);
+
     const products = productsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Product));
     const lowStockCount = products.filter((p) => (p.stockQuantity ?? 0) <= (p.minimumStock ?? 0)).length;
 
-    const ordersSnap = await getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(100)));
     const orders = ordersSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
-
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const todayOrders = orders.filter((o) => Number(o.createdAt) >= startOfToday);
@@ -159,15 +262,12 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
     const totalRevenue = orders.reduce((sum, o) => sum + (o.paymentStatus === 'paid' ? o.total : 0), 0);
     const pendingOrdersCount = orders.filter((o) => o.orderStatus === 'pending' || o.paymentStatus === 'unpaid').length;
 
-    const deliveriesSnap = await getDocs(query(collection(db, 'deliveries'), limit(100)));
     const deliveries = deliveriesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Delivery));
     const activeDeliveriesCount = deliveries.filter(
       (d) => d.status === 'in_transit' || d.status === 'dispatched' || d.status === 'pending' || d.status === 'ready'
     ).length;
 
-    const customersSnap = await getDocs(query(collection(db, 'customers'), limit(100)));
-
-    return {
+    const res: DashboardMetrics = {
       todaySales,
       totalRevenue,
       totalOrdersCount: ordersSnap.size,
@@ -177,10 +277,13 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
       totalProductsCount: productsSnap.size,
       totalCustomersCount: customersSnap.size,
     };
+    serviceCache.dashboardMetrics = { data: res, timestamp: nowTs };
+    return res;
   } catch (err) {
     console.warn('[DataService] Dashboard Firestore query fallback:', err);
-    // Fallback to local
-    return fetchDashboardMetricsOffline();
+    const res = fetchDashboardMetricsOffline();
+    serviceCache.dashboardMetrics = { data: res, timestamp: nowTs };
+    return res;
   }
 }
 
@@ -214,7 +317,15 @@ function fetchDashboardMetricsOffline(): DashboardMetrics {
   };
 }
 
-export async function fetchRecentOrders(maxCount: number = 5): Promise<Order[]> {
+export async function fetchRecentOrders(maxCount: number = 5, forceRefresh: boolean = false): Promise<Order[]> {
+  const live = getLiveOrders();
+  if (live && live.length > 0) {
+    return live.slice(0, maxCount);
+  }
+  const nowTs = Date.now();
+  if (!forceRefresh && serviceCache.recentOrders && nowTs - serviceCache.recentOrders.timestamp < CACHE_TTL.ORDERS) {
+    return serviceCache.recentOrders.data.slice(0, maxCount);
+  }
   if (!isFirebaseConfigured) {
     const list = getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
     return list.slice(0, maxCount);
@@ -222,7 +333,9 @@ export async function fetchRecentOrders(maxCount: number = 5): Promise<Order[]> 
   try {
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(maxCount));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+    serviceCache.recentOrders = { data: list, timestamp: nowTs };
+    return list;
   } catch (err) {
     console.warn('[DataService] Recent orders fallback:', err);
     const list = getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
@@ -230,7 +343,15 @@ export async function fetchRecentOrders(maxCount: number = 5): Promise<Order[]> 
   }
 }
 
-export async function fetchLowStockProducts(maxCount: number = 8): Promise<Product[]> {
+export async function fetchLowStockProducts(maxCount: number = 8, forceRefresh: boolean = false): Promise<Product[]> {
+  const live = getLiveProducts();
+  if (live && live.length > 0) {
+    return live.filter((p) => (p.stockQuantity ?? 0) <= (p.minimumStock ?? 0)).slice(0, maxCount);
+  }
+  const nowTs = Date.now();
+  if (!forceRefresh && serviceCache.lowStockProducts && nowTs - serviceCache.lowStockProducts.timestamp < CACHE_TTL.LOW_STOCK) {
+    return serviceCache.lowStockProducts.data.slice(0, maxCount);
+  }
   if (!isFirebaseConfigured) {
     const list = getLocalCollection<Product>(LS_KEYS.PRODUCTS, INITIAL_PRODUCTS);
     return list.filter((p) => p.stockQuantity <= p.minimumStock).slice(0, maxCount);
@@ -238,7 +359,9 @@ export async function fetchLowStockProducts(maxCount: number = 8): Promise<Produ
   try {
     const snap = await getDocs(query(collection(db, 'products'), limit(100)));
     const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product));
-    return all.filter((p) => (p.stockQuantity ?? 0) <= (p.minimumStock ?? 0)).slice(0, maxCount);
+    const list = all.filter((p) => (p.stockQuantity ?? 0) <= (p.minimumStock ?? 0)).slice(0, maxCount);
+    serviceCache.lowStockProducts = { data: list, timestamp: nowTs };
+    return list;
   } catch (err) {
     console.warn('[DataService] Low stock fallback:', err);
     const list = getLocalCollection<Product>(LS_KEYS.PRODUCTS, INITIAL_PRODUCTS);
@@ -302,6 +425,7 @@ export async function quickRestockProduct(
     );
 
     const docSnap = await getDoc(doc(db, 'products', productId));
+    invalidateDataCache('products');
     return { id: docSnap.id, ...docSnap.data() } as Product;
   } catch (err) {
     console.error('Quick restock error:', err);
@@ -314,8 +438,19 @@ export async function quickRestockProduct(
 export async function fetchActivityLogs(
   filterEntityType?: string,
   filterAction?: string,
-  maxCount: number = 50
+  maxCount: number = 50,
+  forceRefresh: boolean = false
 ): Promise<ActivityLog[]> {
+  const cacheKey = `${filterEntityType || 'all'}_${filterAction || 'all'}_${maxCount}`;
+  const now = Date.now();
+
+  if (!forceRefresh && serviceCache.activityLogs?.[cacheKey]) {
+    const item = serviceCache.activityLogs[cacheKey];
+    if (now - item.timestamp < CACHE_TTL.ACTIVITY) {
+      return item.data;
+    }
+  }
+
   if (!isFirebaseConfigured) {
     let logs = getLocalCollection<ActivityLog>(LS_KEYS.LOGS, INITIAL_ACTIVITY_LOGS);
     if (filterEntityType && filterEntityType !== 'all') {
@@ -324,7 +459,10 @@ export async function fetchActivityLogs(
     if (filterAction && filterAction !== 'all') {
       logs = logs.filter((l) => l.action.toLowerCase().includes(filterAction.toLowerCase()));
     }
-    return logs.slice(0, maxCount);
+    const result = logs.slice(0, maxCount);
+    if (!serviceCache.activityLogs) serviceCache.activityLogs = {};
+    serviceCache.activityLogs[cacheKey] = { data: result, timestamp: now };
+    return result;
   }
 
   try {
@@ -342,6 +480,8 @@ export async function fetchActivityLogs(
     if (filterAction && filterAction !== 'all') {
       logs = logs.filter((l) => l.action.toLowerCase().includes(filterAction.toLowerCase()));
     }
+    if (!serviceCache.activityLogs) serviceCache.activityLogs = {};
+    serviceCache.activityLogs[cacheKey] = { data: logs, timestamp: now };
     return logs;
   } catch (err) {
     console.warn('[DataService] Activity logs query fallback:', err);
@@ -445,6 +585,7 @@ export async function updateExpense(
 
   try {
     await updateDoc(doc(db, 'expenses', id), updatedData);
+    invalidateDataCache('expenses');
     await logActivity(
       'Expense Updated',
       'expense',
@@ -467,6 +608,7 @@ export async function deleteExpense(
     const item = expenses.find((e) => e.id === id);
     expenses = expenses.filter((e) => e.id !== id);
     saveLocalCollection(LS_KEYS.EXPENSES, expenses);
+    invalidateDataCache('expenses');
     await logActivity(
       'Expense Deleted',
       'expense',
@@ -479,6 +621,7 @@ export async function deleteExpense(
 
   try {
     await deleteDoc(doc(db, 'expenses', id));
+    invalidateDataCache('expenses');
     await logActivity('Expense Deleted', 'expense', id, `Deleted expense ID: ${id}`, user);
   } catch (err) {
     console.error('Failed to delete expense:', err);
@@ -673,6 +816,7 @@ export async function saveBusinessSettings(
 
   try {
     await setDoc(doc(db, 'settings', 'business'), settings, { merge: true });
+    invalidateDataCache('settings');
     await logActivity(
       'Settings Updated',
       'settings',
@@ -698,10 +842,23 @@ export interface SalesReportSummary {
   chartData: { label: string; revenue: number; orders: number }[];
 }
 
-export async function fetchSalesReport(period: 'daily' | 'weekly' | 'monthly'): Promise<SalesReportSummary> {
-  const orders = isFirebaseConfigured
-    ? (await getDocs(query(collection(db, 'orders'), limit(300)))).docs.map((d) => ({ id: d.id, ...d.data() } as Order))
-    : getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
+export async function fetchSalesReport(period: 'daily' | 'weekly' | 'monthly', forceRefresh: boolean = false): Promise<SalesReportSummary> {
+  const nowTs = Date.now();
+  if (
+    !forceRefresh &&
+    serviceCache.salesReports?.[period] &&
+    nowTs - serviceCache.salesReports[period].timestamp < CACHE_TTL.REPORTS
+  ) {
+    return serviceCache.salesReports[period].data;
+  }
+
+  // Quota optimization: Reuse warm orders in memory if available
+  const live = getLiveOrders();
+  const orders = live && live.length > 0
+    ? live
+    : isFirebaseConfigured
+      ? (await getDocs(query(collection(db, 'orders'), limit(300)))).docs.map((d) => ({ id: d.id, ...d.data() } as Order))
+      : getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
 
   const now = new Date();
   let filteredOrders: Order[] = [];
@@ -744,7 +901,6 @@ export async function fetchSalesReport(period: 'daily' | 'weekly' | 'monthly'): 
     };
 
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
-    const nowTs = Date.now();
 
     orders.forEach((o) => {
       const age = nowTs - Number(o.createdAt);
@@ -801,7 +957,7 @@ export async function fetchSalesReport(period: 'daily' | 'weekly' | 'monthly'): 
   const unpaidOrders = filteredOrders.filter((o) => o.paymentStatus !== 'paid');
   const avgOrder = paidOrders.length > 0 ? Math.round(totalRevenue / paidOrders.length) : 0;
 
-  return {
+  const result: SalesReportSummary = {
     period,
     totalRevenue,
     totalOrders: filteredOrders.length,
@@ -810,6 +966,10 @@ export async function fetchSalesReport(period: 'daily' | 'weekly' | 'monthly'): 
     unpaidOrdersCount: unpaidOrders.length,
     chartData,
   };
+
+  if (!serviceCache.salesReports) serviceCache.salesReports = {};
+  serviceCache.salesReports[period] = { data: result, timestamp: nowTs };
+  return result;
 }
 
 export interface InventoryValuation {
@@ -821,10 +981,22 @@ export interface InventoryValuation {
   categoryBreakdown: { category: string; count: number; costVal: number; retailVal: number }[];
 }
 
-export async function fetchInventoryValuationReport(): Promise<InventoryValuation> {
-  const products = isFirebaseConfigured
-    ? (await getDocs(query(collection(db, 'products'), limit(300)))).docs.map((d) => ({ id: d.id, ...d.data() } as Product))
-    : getLocalCollection<Product>(LS_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+export async function fetchInventoryValuationReport(forceRefresh: boolean = false): Promise<InventoryValuation> {
+  const nowTs = Date.now();
+  if (
+    !forceRefresh &&
+    serviceCache.inventoryValuation &&
+    nowTs - serviceCache.inventoryValuation.timestamp < CACHE_TTL.REPORTS
+  ) {
+    return serviceCache.inventoryValuation.data;
+  }
+
+  const live = getLiveProducts();
+  const products = live && live.length > 0
+    ? live
+    : isFirebaseConfigured
+      ? (await getDocs(query(collection(db, 'products'), limit(300)))).docs.map((d) => ({ id: d.id, ...d.data() } as Product))
+      : getLocalCollection<Product>(LS_KEYS.PRODUCTS, INITIAL_PRODUCTS);
 
   let totalCostValue = 0;
   let totalRetailValue = 0;
@@ -850,7 +1022,7 @@ export async function fetchInventoryValuationReport(): Promise<InventoryValuatio
   const projectedGrossProfit = totalRetailValue - totalCostValue;
   const projectedMarginPercent = totalRetailValue > 0 ? (projectedGrossProfit / totalRetailValue) * 100 : 0;
 
-  return {
+  const result: InventoryValuation = {
     totalItemsCount: products.reduce((acc, p) => acc + (p.stockQuantity || 0), 0),
     totalCostValue,
     totalRetailValue,
@@ -863,6 +1035,9 @@ export async function fetchInventoryValuationReport(): Promise<InventoryValuatio
       retailVal: val.retailVal,
     })),
   };
+
+  serviceCache.inventoryValuation = { data: result, timestamp: nowTs };
+  return result;
 }
 
 export interface CourierPerformance {
@@ -874,10 +1049,22 @@ export interface CourierPerformance {
   courierBreakdown: { courier: string; total: number; delivered: number; successRate: number }[];
 }
 
-export async function fetchCourierPerformanceReport(): Promise<CourierPerformance> {
-  const deliveries = isFirebaseConfigured
-    ? (await getDocs(query(collection(db, 'deliveries'), limit(200)))).docs.map((d) => ({ id: d.id, ...d.data() } as Delivery))
-    : getLocalCollection<Delivery>(LS_KEYS.DELIVERIES, INITIAL_DELIVERIES);
+export async function fetchCourierPerformanceReport(forceRefresh: boolean = false): Promise<CourierPerformance> {
+  const nowTs = Date.now();
+  if (
+    !forceRefresh &&
+    serviceCache.courierPerformance &&
+    nowTs - serviceCache.courierPerformance.timestamp < CACHE_TTL.REPORTS
+  ) {
+    return serviceCache.courierPerformance.data;
+  }
+
+  const live = getLiveDeliveries();
+  const deliveries = live && live.length > 0
+    ? live
+    : isFirebaseConfigured
+      ? (await getDocs(query(collection(db, 'deliveries'), limit(200)))).docs.map((d) => ({ id: d.id, ...d.data() } as Delivery))
+      : getLocalCollection<Delivery>(LS_KEYS.DELIVERIES, INITIAL_DELIVERIES);
 
   const total = deliveries.length;
   const delivered = deliveries.filter((d) => d.status === 'delivered').length;
@@ -893,7 +1080,7 @@ export async function fetchCourierPerformanceReport(): Promise<CourierPerformanc
     if (d.status === 'delivered') couriersMap[c].delivered += 1;
   });
 
-  return {
+  const result: CourierPerformance = {
     totalDeliveries: total,
     deliveredCount: delivered,
     pendingCount: pending,
@@ -906,6 +1093,9 @@ export async function fetchCourierPerformanceReport(): Promise<CourierPerformanc
       successRate: val.total > 0 ? Math.round((val.delivered / val.total) * 100) : 0,
     })),
   };
+
+  serviceCache.courierPerformance = { data: result, timestamp: nowTs };
+  return result;
 }
 
 export interface ProfitLossSummary {
@@ -918,20 +1108,30 @@ export interface ProfitLossSummary {
   expenseCategoryBreakdown: { category: string; amount: number; percentage: number }[];
 }
 
-export async function fetchProfitLossReport(): Promise<ProfitLossSummary> {
-  const orders = isFirebaseConfigured
-    ? (await getDocs(query(collection(db, 'orders'), limit(300)))).docs.map((d) => ({ id: d.id, ...d.data() } as Order))
-    : getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
+export async function fetchProfitLossReport(forceRefresh: boolean = false): Promise<ProfitLossSummary> {
+  const nowTs = Date.now();
+  if (
+    !forceRefresh &&
+    serviceCache.profitLoss &&
+    nowTs - serviceCache.profitLoss.timestamp < CACHE_TTL.REPORTS
+  ) {
+    return serviceCache.profitLoss.data;
+  }
 
-  const expenses = isFirebaseConfigured
+  const live = getLiveOrders();
+  const orders = live && live.length > 0
+    ? live
+    : isFirebaseConfigured
+      ? (await getDocs(query(collection(db, 'orders'), limit(300)))).docs.map((d) => ({ id: d.id, ...d.data() } as Order))
+      : getLocalCollection<Order>(LS_KEYS.ORDERS, INITIAL_ORDERS);
+
+  const expenses = serviceCache.expenses?.data || (isFirebaseConfigured
     ? (await getDocs(query(collection(db, 'expenses'), limit(200)))).docs.map((d) => ({ id: d.id, ...d.data() } as Expense))
-    : getLocalCollection<Expense>(LS_KEYS.EXPENSES, INITIAL_EXPENSES);
+    : getLocalCollection<Expense>(LS_KEYS.EXPENSES, INITIAL_EXPENSES));
 
-  // Revenue from paid orders
   const paidOrders = orders.filter((o) => o.paymentStatus === 'paid');
   const salesRevenue = paidOrders.reduce((sum, o) => sum + o.total, 0);
 
-  // Approximate COGS: assume average 55% of product selling price or calculated if products known
   const estimatedCostRatio = 0.55;
   const costOfGoodsSold = Math.round(salesRevenue * estimatedCostRatio);
   const grossProfit = salesRevenue - costOfGoodsSold;
@@ -951,7 +1151,7 @@ export async function fetchProfitLossReport(): Promise<ProfitLossSummary> {
     percentage: totalExpenses > 0 ? Math.round((amount / totalExpenses) * 100) : 0,
   }));
 
-  return {
+  const result: ProfitLossSummary = {
     salesRevenue,
     costOfGoodsSold,
     grossProfit,
@@ -960,6 +1160,9 @@ export async function fetchProfitLossReport(): Promise<ProfitLossSummary> {
     netMarginPercent,
     expenseCategoryBreakdown,
   };
+
+  serviceCache.profitLoss = { data: result, timestamp: nowTs };
+  return result;
 }
 
 // ==================== CSV EXPORT UTILITY ====================

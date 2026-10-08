@@ -233,3 +233,15 @@ export interface NavItem {
   requiredRole?: UserRole;
   badge?: string | number;
 }
+
+// Product Category Definition for Dynamic Category Management
+export interface ProductCategory {
+  id: string;
+  name: string;
+  skuPrefix: string;
+  active: boolean;
+  description?: string;
+  createdAt: string | number;
+  updatedAt: string | number;
+}
+

@@ -305,6 +305,18 @@ service cloud.firestore {
         isValidOptionalString('photoURL', 0, 500);
     }
 
+    function isValidCategory(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'skuPrefix', 'active', 'description', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['name', 'skuPrefix']) &&
+        validStringLength('name', 1, 100) &&
+        validStringLength('skuPrefix', 2, 10) &&
+        (!( 'active' in data) || data.active is bool) &&
+        isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('description', 0, 500) &&
+        isValidOptionalTimestamp('createdAt') &&
+        isValidOptionalTimestamp('updatedAt');
+    }
+
     function isValidProduct(data) {
       return hasOnlyAllowedFields(['id', 'name', 'sku', 'barcode', 'category', 'description', 'costPrice', 'sellingPrice', 'stockQuantity', 'minimumStock', 'unit', 'active', 'imageUrl', 'createdAt', 'updatedAt']) &&
         hasRequiredFields(['name', 'sku', 'costPrice', 'sellingPrice', 'stockQuantity', 'minimumStock']) &&
@@ -524,6 +536,21 @@ service cloud.firestore {
       allow delete: if isAdmin() && request.auth.uid != uid;
     }
 
+    // Categories Collection (Dynamic Category Management)
+    match /categories/{categoryId} {
+      // Active staff and admins can browse categories for POS and product catalog
+      allow read: if isStaff();
+
+      // Only administrators can create or update categories
+      allow create: if isAdmin() && isValidCategory(request.resource.data);
+
+      allow update: if isAdmin() && isValidCategory(request.resource.data) &&
+        areImmutableFieldsUnchanged(['createdAt']);
+
+      // Only administrators can delete category documents
+      allow delete: if isAdmin();
+    }
+
     // 2. Products Collection
     match /products/{productId} {
       // Active staff and admins can browse products
@@ -660,24 +687,25 @@ service cloud.firestore {
 
     // 10. Settings Collection
     match /settings/{settingId} {
-      // Active users can read business settings and invoice counter; other settings admin-only
+      // Active users can read business settings, invoice counter and SKU counters; other settings admin-only
       allow read: if isActive() && (
-        settingId in ['business', 'invoice_counter'] || isAdmin()
+        settingId in ['business', 'invoice_counter', 'counters', 'sku_counters'] || isAdmin()
       );
 
       // Business Settings: Only admins can configure business details
-      // Invoice Counter: Can be initialized by admin (or bootstrapped on 1 by staff)
+      // Counters: Can be initialized by admin or active staff
       allow create: if (
         (settingId == 'business' && isAdmin() && isValidBusinessSettings(request.resource.data)) ||
-        (settingId == 'invoice_counter' && (isAdmin() || (isStaff() && request.resource.data.count == 1))) ||
-        (settingId != 'business' && settingId != 'invoice_counter' && isAdmin())
+        (settingId in ['invoice_counter', 'counters', 'sku_counters'] && isStaff()) ||
+        (settingId != 'business' && !(settingId in ['invoice_counter', 'counters', 'sku_counters']) && isAdmin())
       );
 
       // Updates:
       // - Business settings: Admin only
-      // - Invoice counter: Admin can modify or staff can atomically increment (+1) during checkout
+      // - Counters: Admin or staff atomic increment during checkout or product addition
       allow update: if (
         (settingId == 'business' && isAdmin() && isValidBusinessSettings(request.resource.data)) ||
+        (settingId in ['counters', 'sku_counters'] && isStaff()) ||
         (settingId == 'invoice_counter' && (
           (isAdmin() && request.resource.data.count is int && request.resource.data.count >= 0) ||
           (isStaff() &&
@@ -685,11 +713,11 @@ service cloud.firestore {
            request.resource.data.count is int &&
            request.resource.data.count == resource.data.count + 1)
         )) ||
-        (settingId != 'business' && settingId != 'invoice_counter' && isAdmin())
+        (settingId != 'business' && !(settingId in ['invoice_counter', 'counters', 'sku_counters']) && isAdmin())
       );
 
       // Critical settings documents cannot be deleted
-      allow delete: if settingId != 'business' && settingId != 'invoice_counter' && isAdmin();
+      allow delete: if settingId != 'business' && !(settingId in ['invoice_counter', 'counters', 'sku_counters']) && isAdmin();
     }
 
     // ===============================================================

@@ -9,43 +9,56 @@ import {
   Image as ImageIcon,
   CheckCircle2,
 } from 'lucide-react';
-import { Product } from '@/types';
+import { Product, ProductCategory } from '@/types';
 import { uploadProductImage } from '@/lib/firebase/storage';
 import { useNotification } from '@/context/NotificationContext';
-
-const PREDEFINED_CATEGORIES = [
-  'Ceylon Tea',
-  'Spices & Condiments',
-  'Oils & Ghee',
-  'Sweets & Syrups',
-  'Dry Goods',
-  'Canned Goods',
-  'Bakery & Snacks',
-  'Beverages',
-  'Personal Care',
-  'Other',
-];
+import {
+  DEFAULT_PREDEFINED_CATEGORIES,
+  peekNextCategorySku,
+  sanitizeSkuPrefix,
+} from '@/lib/firebase/firestore';
 
 interface ProductModalProps {
   product: Product | null; // null if creating, Product if editing
   existingProducts: Product[];
+  categories?: ProductCategory[];
   onClose: () => void;
   onSave: (productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => Promise<void>;
+  onManageCategories?: () => void;
 }
 
 export const ProductModal: React.FC<ProductModalProps> = ({
   product,
   existingProducts,
+  categories,
   onClose,
   onSave,
+  onManageCategories,
 }) => {
   const isEditing = Boolean(product);
   const { notifySuccess, notifyError } = useNotification();
 
+  // Active categories list (preserves existing product category even if inactive)
+  const availableCategories = React.useMemo(() => {
+    const list = categories && categories.length > 0 ? categories : DEFAULT_PREDEFINED_CATEGORIES;
+    return list.filter((c) => c.active || (product && c.name === product.category));
+  }, [categories, product]);
+
+  const defaultCategory = product?.category || availableCategories[0]?.name || 'Ceylon Tea';
+
   const [name, setName] = useState(product?.name || '');
-  const [sku, setSku] = useState(product?.sku || '');
+  const [category, setCategory] = useState(defaultCategory);
+
+  // Automatic category-based SKU preview for new products
+  const initialSku = React.useMemo(() => {
+    if (product?.sku) return product.sku;
+    const catObj = availableCategories.find((c) => c.name === defaultCategory);
+    const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(defaultCategory);
+    return peekNextCategorySku(prefix, existingProducts);
+  }, [product, defaultCategory, availableCategories, existingProducts]);
+
+  const [sku, setSku] = useState(initialSku);
   const [barcode, setBarcode] = useState(product?.barcode || '');
-  const [category, setCategory] = useState(product?.category || PREDEFINED_CATEGORIES[0]);
   const [customCategory, setCustomCategory] = useState('');
   const [description, setDescription] = useState(product?.description || '');
   const [costPrice, setCostPrice] = useState<number | ''>(product?.costPrice ?? '');
@@ -66,17 +79,25 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const profitAmount = numSelling - numCost;
   const profitMarginPercent = numSelling > 0 ? (profitAmount / numSelling) * 100 : 0;
 
-  // Auto-generate SKU helper
+  // Auto-generate SKU helper based on selected category prefix
   const handleGenerateSku = () => {
-    const prefix = (category || 'DAN')
-      .split(' ')
-      .map((w) => w.substring(0, 3).toUpperCase())
-      .join('-');
-    const random = Math.floor(100 + Math.random() * 900);
-    const generated = `${prefix.substring(0, 6)}-${random}`;
+    const catObj = availableCategories.find((c) => c.name === category);
+    const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(category);
+    const generated = peekNextCategorySku(prefix, existingProducts);
     setSku(generated);
     if (!barcode) {
       setBarcode(`479${Math.floor(1000000000 + Math.random() * 9000000000)}`);
+    }
+  };
+
+  // When category changes, automatically generate category-based SKU for NEW products only
+  const handleCategoryChange = (newCat: string) => {
+    setCategory(newCat);
+    if (!isEditing) {
+      const catObj = availableCategories.find((c) => c.name === newCat);
+      const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(newCat);
+      const autoSku = peekNextCategorySku(prefix, existingProducts);
+      setSku(autoSku);
     }
   };
 
@@ -298,17 +319,28 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           {/* Row 3: Category */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-navy-900 mb-1">
-                Category <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-navy-900">
+                  Category <span className="text-rose-500">*</span>
+                </label>
+                {onManageCategories && (
+                  <button
+                    type="button"
+                    onClick={onManageCategories}
+                    className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 transition-colors"
+                  >
+                    + Manage
+                  </button>
+                )}
+              </div>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
-                {PREDEFINED_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
+                {availableCategories.map((cat) => (
+                  <option key={cat.id || cat.name} value={cat.name}>
+                    {cat.name} ({cat.skuPrefix}-)
                   </option>
                 ))}
               </select>

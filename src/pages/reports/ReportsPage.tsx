@@ -45,15 +45,15 @@ export const ReportsPage: React.FC = () => {
   const [profitReport, setProfitReport] = useState<ProfitLossSummary | null>(null);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
 
-  const loadAllReports = async () => {
+  const loadAllReports = async (force: boolean = false) => {
     setIsLoading(true);
     try {
       const [sales, inv, cour, profit, lowStock] = await Promise.all([
-        fetchSalesReport(salesPeriod),
-        fetchInventoryValuationReport(),
-        fetchCourierPerformanceReport(),
-        fetchProfitLossReport(),
-        fetchLowStockProducts(100),
+        fetchSalesReport(salesPeriod, force),
+        fetchInventoryValuationReport(force),
+        fetchCourierPerformanceReport(force),
+        fetchProfitLossReport(force),
+        fetchLowStockProducts(100, force),
       ]);
       setSalesReport(sales);
       setInventoryReport(inv);
@@ -68,7 +68,18 @@ export const ReportsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadAllReports();
+    loadAllReports(false);
+  }, []);
+
+  // When only sales period tab changes, only refresh the sales summary (zero extra reads if cached)
+  useEffect(() => {
+    let isCurrent = true;
+    fetchSalesReport(salesPeriod, false).then((report) => {
+      if (isCurrent) setSalesReport(report);
+    });
+    return () => {
+      isCurrent = false;
+    };
   }, [salesPeriod]);
 
   // CSV Export Handlers
@@ -153,7 +164,7 @@ export const ReportsPage: React.FC = () => {
 
         <button
           type="button"
-          onClick={loadAllReports}
+          onClick={() => loadAllReports(true)}
           disabled={isLoading}
           className="inline-flex items-center gap-2 self-start sm:self-auto rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
         >

@@ -23,6 +23,7 @@ import {
   ActivityLog,
   BusinessSettings,
   StockMovementType,
+  ProductCategory,
 } from '@/types';
 
 // Generic Firestore type converter helper
@@ -36,6 +37,7 @@ export const createConverter = <T extends DocumentData>(): FirestoreDataConverte
 // Typed collection references
 export const usersCol = collection(db, 'users').withConverter(createConverter<User>());
 export const productsCol = collection(db, 'products').withConverter(createConverter<Product>());
+export const categoriesCol = collection(db, 'categories').withConverter(createConverter<ProductCategory>());
 export const customersCol = collection(db, 'customers').withConverter(createConverter<Customer>());
 export const ordersCol = collection(db, 'orders').withConverter(createConverter<Order>());
 export const invoicesCol = collection(db, 'invoices').withConverter(createConverter<Invoice>());
@@ -250,3 +252,123 @@ export async function logActivity(
     console.warn('[Firestore] Failed to log activity:', error);
   }
 }
+
+// ----------------------------------------------------
+// DYNAMIC CATEGORY & SECURE ATOMIC SKU GENERATOR
+// ----------------------------------------------------
+
+export const DEFAULT_PREDEFINED_CATEGORIES: ProductCategory[] = [
+  { id: 'cat-tea', name: 'Ceylon Tea', skuPrefix: 'TEA', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-spices', name: 'Spices & Condiments', skuPrefix: 'SPI', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-oils', name: 'Oils & Ghee', skuPrefix: 'OIL', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-sweets', name: 'Sweets & Syrups', skuPrefix: 'SWT', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-dry', name: 'Dry Goods', skuPrefix: 'DRY', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-canned', name: 'Canned Goods', skuPrefix: 'CAN', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-bakery', name: 'Bakery & Snacks', skuPrefix: 'BAK', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-beverages', name: 'Beverages', skuPrefix: 'BEV', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-care', name: 'Personal Care', skuPrefix: 'PC', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+  { id: 'cat-other', name: 'Other', skuPrefix: 'OTH', active: true, createdAt: 1704067200000, updatedAt: 1704067200000 },
+];
+
+/**
+ * Sanitize and standardize a SKU Prefix (2-6 uppercase letters/numbers)
+ */
+export function sanitizeSkuPrefix(prefixOrName: string): string {
+  if (!prefixOrName) return 'DAN';
+  const clean = prefixOrName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return clean.substring(0, 4) || 'DAN';
+}
+
+/**
+ * Inspect existing products to find the highest number currently in use for a prefix
+ */
+export function getHighestExistingSkuNumber(prefix: string, products: Product[] = []): number {
+  const cleanPrefix = sanitizeSkuPrefix(prefix);
+  const regex = new RegExp(`^${cleanPrefix}-(\\d+)$`, 'i');
+  let max = 0;
+  for (const p of products) {
+    if (!p.sku) continue;
+    const match = p.sku.trim().match(regex);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > max) {
+        max = num;
+      }
+    }
+  }
+  return max;
+}
+
+/**
+ * Read-only preview of prospective next SKU for a category prefix (does not increment counter)
+ */
+export function peekNextCategorySku(prefix: string, products: Product[] = []): string {
+  const cleanPrefix = sanitizeSkuPrefix(prefix);
+  const highestExisting = getHighestExistingSkuNumber(cleanPrefix, products);
+  let stored = 0;
+  if (typeof window !== 'undefined') {
+    stored = parseInt(localStorage.getItem(`danix_sku_counter_${cleanPrefix}`) || '0', 10);
+  }
+  const prospective = Math.max(stored, highestExisting) + 1;
+  return `${cleanPrefix}-${String(prospective).padStart(4, '0')}`;
+}
+
+/**
+ * Atomically generate and increment the next unique category-based SKU using Firestore transaction
+ * E.g., ELE-0001, ELE-0002, CLO-0001
+ */
+export async function generateNextCategorySku(
+  prefix: string,
+  existingProducts: Product[] = []
+): Promise<string> {
+  const cleanPrefix = sanitizeSkuPrefix(prefix);
+  const highestExisting = getHighestExistingSkuNumber(cleanPrefix, existingProducts);
+
+  if (!isFirebaseConfigured) {
+    const key = `danix_sku_counter_${cleanPrefix}`;
+    const stored = parseInt(localStorage.getItem(key) || '0', 10);
+    const nextVal = Math.max(stored, highestExisting) + 1;
+    localStorage.setItem(key, nextVal.toString());
+    return `${cleanPrefix}-${String(nextVal).padStart(4, '0')}`;
+  }
+
+  const counterDocRef = doc(db, 'settings', 'sku_counters');
+
+  try {
+    const nextNumber = await runTransaction(db, async (transaction) => {
+      const counterSnap = await transaction.get(counterDocRef);
+      let currentVal = 0;
+
+      if (counterSnap.exists()) {
+        const data = counterSnap.data();
+        currentVal = data?.[`prefix_${cleanPrefix}`] || 0;
+      }
+
+      const incremented = Math.max(currentVal, highestExisting) + 1;
+      transaction.set(
+        counterDocRef,
+        {
+          [`prefix_${cleanPrefix}`]: incremented,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      return incremented;
+    });
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`danix_sku_counter_${cleanPrefix}`, nextNumber.toString());
+    }
+
+    return `${cleanPrefix}-${String(nextNumber).padStart(4, '0')}`;
+  } catch (error) {
+    console.warn('[Firestore] Atomic SKU counter transaction fallback:', error);
+    const nextVal = highestExisting + 1;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`danix_sku_counter_${cleanPrefix}`, nextVal.toString());
+    }
+    return `${cleanPrefix}-${String(nextVal).padStart(4, '0')}`;
+  }
+}
+

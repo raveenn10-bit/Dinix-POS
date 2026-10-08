@@ -17,16 +17,24 @@ import {
   Percent,
   RefreshCw,
   Eye,
+  FolderTree,
 } from 'lucide-react';
 import { Product } from '@/types';
-import { useProducts } from '@/lib/dataStore';
+import { useProducts, useCategories } from '@/lib/dataStore';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
 import { ProductModal } from './ProductModal';
 import { BarcodeModal } from './BarcodeModal';
+import { CategoryModal } from './CategoryModal';
 
 export const ProductsPage: React.FC = () => {
   const { products, loading, saveProduct, deleteProduct, refresh } = useProducts();
+  const {
+    categories: customCategories,
+    saveCategory,
+    toggleCategoryActive,
+    deleteCategory,
+  } = useCategories();
   const { userProfile, isAdmin } = useAuth();
   const { notifySuccess, notifyWarning, notifyError } = useNotification();
 
@@ -39,19 +47,23 @@ export const ProductsPage: React.FC = () => {
 
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Derived categories
+  // Derived categories (merged products categories and custom dynamic categories)
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
       if (p.category) set.add(p.category);
     });
+    customCategories.forEach((c) => {
+      if (c.active) set.add(c.name);
+    });
     return Array.from(set).sort();
-  }, [products]);
+  }, [products, customCategories]);
 
   // Filtered products list
   const filteredProducts = useMemo(() => {
@@ -165,6 +177,18 @@ export const ProductsPage: React.FC = () => {
           >
             <RefreshCw className="h-4 w-4" />
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-navy-800 shadow-sm hover:bg-slate-50 transition-colors"
+              title="Manage Product Categories & SKU Prefixes"
+            >
+              <FolderTree className="h-4 w-4 text-brand-500" />
+              <span>Categories</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -697,13 +721,27 @@ export const ProductsPage: React.FC = () => {
         <ProductModal
           product={editingProduct}
           existingProducts={products}
+          categories={customCategories}
           onClose={() => setIsModalOpen(false)}
+          onManageCategories={isAdmin ? () => setIsCategoryModalOpen(true) : undefined}
           onSave={async (prodData) => {
             await saveProduct(prodData, {
               uid: userProfile?.uid || 'user',
               name: userProfile?.name || 'Danix User',
             });
           }}
+        />
+      )}
+
+      {/* Dynamic Category Management Modal (Admin Only) */}
+      {isCategoryModalOpen && (
+        <CategoryModal
+          categories={customCategories}
+          products={products}
+          onClose={() => setIsCategoryModalOpen(false)}
+          onSaveCategory={saveCategory}
+          onToggleActive={toggleCategoryActive}
+          onDeleteCategory={deleteCategory}
         />
       )}
 

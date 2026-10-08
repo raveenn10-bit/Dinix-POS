@@ -44,14 +44,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [restockingId, setRestockingId] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = async (force: boolean = false) => {
     setIsLoading(true);
     try {
       const [m, o, ls, a] = await Promise.all([
-        fetchDashboardMetrics(),
-        fetchRecentOrders(6),
-        fetchLowStockProducts(6),
-        fetchActivityLogs('all', 'all', 6),
+        fetchDashboardMetrics(force),
+        fetchRecentOrders(6, force),
+        fetchLowStockProducts(6, force),
+        fetchActivityLogs('all', 'all', 6, force),
       ]);
       setMetrics(m);
       setRecentOrders(o);
@@ -65,7 +65,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, []);
 
   const handleQuickRestock = async (product: Product, quantity: number = 10) => {
@@ -78,7 +78,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         { uid: userProfile.uid, name: userProfile.name }
       );
       notifySuccess(`Restocked +${quantity} units to ${product.name}!`, 'Inventory Updated');
-      await loadData();
+      await loadData(true);
     } catch (err) {
       console.error('Restock error:', err);
       notifyError('Failed to restock item', 'Error');
@@ -156,7 +156,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => loadData(true)}
               disabled={isLoading}
               className="inline-flex items-center gap-2 rounded-xl border border-navy-700 bg-navy-800/80 px-4 py-2.5 text-xs font-semibold text-slate-200 hover:bg-navy-700 transition-colors shadow-sm"
             >

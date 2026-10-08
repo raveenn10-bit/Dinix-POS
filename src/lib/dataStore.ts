@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   getDocs,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   updateDoc,
@@ -12,6 +13,7 @@ import {
 import { db, isFirebaseConfigured } from '@/lib/firebase/config';
 import {
   productsCol,
+  categoriesCol,
   customersCol,
   ordersCol,
   invoicesCol,
@@ -19,6 +21,9 @@ import {
   stockMovementsCol,
   recordStockMovement,
   generateNextInvoiceNumber,
+  generateNextCategorySku,
+  DEFAULT_PREDEFINED_CATEGORIES,
+  sanitizeSkuPrefix,
   logActivity,
 } from '@/lib/firebase/firestore';
 import {
@@ -31,6 +36,7 @@ import {
 } from './mockData';
 import {
   Product,
+  ProductCategory,
   Customer,
   Order,
   StockMovement,
@@ -45,6 +51,7 @@ import {
 // Storage keys for demo mode
 const STORAGE_KEYS = {
   PRODUCTS: 'danix_mock_products',
+  CATEGORIES: 'danix_mock_categories',
   CUSTOMERS: 'danix_mock_customers',
   ORDERS: 'danix_mock_orders',
   STOCK_MOVEMENTS: 'danix_mock_stock_movements',
@@ -58,6 +65,9 @@ export function initDemoStorage(): void {
 
   if (!localStorage.getItem(STORAGE_KEYS.PRODUCTS)) {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+  }
+  if (!localStorage.getItem(STORAGE_KEYS.CATEGORIES)) {
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_PREDEFINED_CATEGORIES));
   }
   if (!localStorage.getItem(STORAGE_KEYS.CUSTOMERS)) {
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
@@ -80,17 +90,212 @@ export function initDemoStorage(): void {
 const seededCollections = new Set<string>();
 
 // ----------------------------------------------------
+// SINGLETON SUBSCRIPTION & CACHE QUOTA MANAGEMENT
+// ----------------------------------------------------
+
+export type CacheDomain = 'all' | 'orders' | 'products' | 'deliveries' | 'expenses' | 'settings' | 'logs';
+type CacheInvalidator = (domain?: CacheDomain) => void;
+const cacheInvalidators = new Set<CacheInvalidator>();
+
+export function registerCacheInvalidator(fn: CacheInvalidator): () => void {
+  cacheInvalidators.add(fn);
+  return () => {
+    cacheInvalidators.delete(fn);
+  };
+}
+
+export function invalidateDataCache(domain: CacheDomain = 'all'): void {
+  cacheInvalidators.forEach((fn) => {
+    try {
+      fn(domain);
+    } catch (e) {
+      console.warn('[CacheManager] Error in invalidator:', e);
+    }
+  });
+}
+
+class LiveCollectionManager<T> {
+  private data: T[] | null = null;
+  private subscribers = new Set<(items: T[]) => void>();
+  private unsubscribe: (() => void) | null = null;
+  private teardownTimer: ReturnType<typeof setTimeout> | null = null;
+  private colRef: any;
+  private processSnapshot: (docs: any[]) => T[];
+  private storageKey: string;
+  private fallbackInitial: T[];
+
+  constructor(
+    colRef: any,
+    processSnapshot: (docs: any[]) => T[],
+    storageKey: string,
+    fallbackInitial: T[]
+  ) {
+    this.colRef = colRef;
+    this.processSnapshot = processSnapshot;
+    this.storageKey = storageKey;
+    this.fallbackInitial = fallbackInitial;
+  }
+
+  public getLive(): T[] | null {
+    return this.data;
+  }
+
+  public subscribe(onUpdate: (items: T[]) => void): () => void {
+    this.subscribers.add(onUpdate);
+
+    if (this.teardownTimer) {
+      clearTimeout(this.teardownTimer);
+      this.teardownTimer = null;
+    }
+
+    if (this.data !== null) {
+      onUpdate(this.data);
+    }
+
+    if (!this.unsubscribe && isFirebaseConfigured) {
+      try {
+        this.unsubscribe = onSnapshot(
+          this.colRef,
+          (snapshot: any) => {
+            const list = this.processSnapshot(snapshot.docs);
+            this.data = list;
+            try {
+              localStorage.setItem(this.storageKey, JSON.stringify(list));
+            } catch {}
+            this.subscribers.forEach((sub) => sub(list));
+          },
+          (err: any) => {
+            console.warn(`[LiveStore ${this.storageKey}] Snapshot inactive:`, err);
+            const stored = localStorage.getItem(this.storageKey);
+            const fallback = stored ? JSON.parse(stored) : this.fallbackInitial;
+            this.data = fallback;
+            this.subscribers.forEach((sub) => sub(fallback));
+          }
+        );
+      } catch (err) {
+        console.warn(`[LiveStore ${this.storageKey}] Subscription error:`, err);
+      }
+    }
+
+    return () => {
+      this.subscribers.delete(onUpdate);
+      // Grace period of 45s keeps the warm connection alive across tab/navigation switches
+      if (this.subscribers.size === 0 && this.unsubscribe) {
+        this.teardownTimer = setTimeout(() => {
+          if (this.subscribers.size === 0 && this.unsubscribe) {
+            this.unsubscribe();
+            this.unsubscribe = null;
+          }
+        }, 45000);
+      }
+    };
+  }
+
+  public updateMemory(updater: (current: T[]) => T[]) {
+    const current = this.data || this.fallbackInitial;
+    const updated = updater(current);
+    this.data = updated;
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify(updated));
+    } catch {}
+    this.subscribers.forEach((sub) => sub(updated));
+  }
+}
+
+const productsStore = new LiveCollectionManager<Product>(
+  productsCol,
+  (docs) => docs.map((d) => ({ ...d.data(), id: d.id } as Product)),
+  STORAGE_KEYS.PRODUCTS,
+  INITIAL_PRODUCTS
+);
+
+const categoriesStore = new LiveCollectionManager<ProductCategory>(
+  categoriesCol,
+  (docs) => {
+    const list = docs.map((d) => ({ ...d.data(), id: d.id } as ProductCategory));
+    const existingMap = new Map(list.map((c) => [c.id, c]));
+    for (const pre of DEFAULT_PREDEFINED_CATEGORIES) {
+      if (!existingMap.has(pre.id) && !list.some((c) => c.name.toLowerCase() === pre.name.toLowerCase())) {
+        list.push(pre);
+      }
+    }
+    return list;
+  },
+  STORAGE_KEYS.CATEGORIES,
+  DEFAULT_PREDEFINED_CATEGORIES
+);
+
+const customersStore = new LiveCollectionManager<Customer>(
+  customersCol,
+  (docs) => docs.map((d) => ({ ...d.data(), id: d.id } as Customer)),
+  STORAGE_KEYS.CUSTOMERS,
+  INITIAL_CUSTOMERS
+);
+
+const ordersStore = new LiveCollectionManager<Order>(
+  query(ordersCol, orderBy('createdAt', 'desc')),
+  (docs) => docs.map((d) => ({ ...d.data(), id: d.id } as Order)),
+  STORAGE_KEYS.ORDERS,
+  INITIAL_ORDERS
+);
+
+const stockMovementsStore = new LiveCollectionManager<StockMovement>(
+  query(stockMovementsCol, orderBy('createdAt', 'desc')),
+  (docs) => docs.map((d) => ({ ...d.data(), id: d.id } as StockMovement)),
+  STORAGE_KEYS.STOCK_MOVEMENTS,
+  INITIAL_STOCK_MOVEMENTS
+);
+
+const invoicesStore = new LiveCollectionManager<Invoice>(
+  query(invoicesCol, orderBy('createdAt', 'desc')),
+  (docs) => docs.map((d) => ({ ...d.data(), id: d.id } as Invoice)),
+  STORAGE_KEYS.INVOICES,
+  INITIAL_INVOICES
+);
+
+const deliveriesStore = new LiveCollectionManager<Delivery>(
+  query(deliveriesCol, orderBy('createdAt', 'desc')),
+  (docs) => docs.map((d) => ({ ...d.data(), id: d.id } as Delivery)),
+  STORAGE_KEYS.DELIVERIES,
+  INITIAL_DELIVERIES
+);
+
+// Export memory getters for metric calculations without Firestore reads
+export function getLiveProducts(): Product[] | null {
+  return productsStore.getLive();
+}
+export function getLiveCategories(): ProductCategory[] | null {
+  return categoriesStore.getLive();
+}
+export function getLiveCustomers(): Customer[] | null {
+  return customersStore.getLive();
+}
+export function getLiveOrders(): Order[] | null {
+  return ordersStore.getLive();
+}
+export function getLiveDeliveries(): Delivery[] | null {
+  return deliveriesStore.getLive();
+}
+export function getLiveInvoices(): Invoice[] | null {
+  return invoicesStore.getLive();
+}
+export function getLiveStockMovements(): StockMovement[] | null {
+  return stockMovementsStore.getLive();
+}
+
+// ----------------------------------------------------
 // PRODUCTS SERVICE & HOOK
 // ----------------------------------------------------
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>(() => {
     initDemoStorage();
+    if (productsStore.getLive() !== null) return productsStore.getLive()!;
     if (typeof window === 'undefined') return INITIAL_PRODUCTS;
     const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     return stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(productsStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchProducts = useCallback(async () => {
@@ -101,34 +306,8 @@ export function useProducts() {
       setLoading(false);
       return;
     }
-
-    try {
-      const snapshot = await getDocs(productsCol);
-      if (snapshot.empty) {
-        if (!seededCollections.has('products')) {
-          seededCollections.add('products');
-          for (const p of INITIAL_PRODUCTS) {
-            try {
-              await setDoc(doc(db, 'products', p.id), p);
-            } catch {
-              // ignore seed write permissions error if any
-            }
-          }
-        }
-        setProducts(INITIAL_PRODUCTS);
-      } else {
-        const list = snapshot.docs.map((docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        }));
-        setProducts(list);
-      }
-    } catch (err) {
-      console.warn('[Firestore] Falling back to local products:', err);
-      const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      setProducts(stored ? JSON.parse(stored) : INITIAL_PRODUCTS);
-      setError((err as Error).message);
-    } finally {
+    if (productsStore.getLive() !== null) {
+      setProducts(productsStore.getLive()!);
       setLoading(false);
     }
   }, []);
@@ -139,30 +318,12 @@ export function useProducts() {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      productsCol,
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((docSnap) => ({
-            ...docSnap.data(),
-            id: docSnap.id,
-          }));
-          setProducts(list);
-        } else if (!seededCollections.has('products')) {
-          seededCollections.add('products');
-          fetchProducts();
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('[Firestore products listener inactive, using local data]:', err);
-        const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-        setProducts(stored ? JSON.parse(stored) : INITIAL_PRODUCTS);
-        setLoading(false);
-      }
-    );
+    const unsub = productsStore.subscribe((items) => {
+      setProducts(items);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [fetchProducts]);
 
   const saveProduct = async (
@@ -173,8 +334,18 @@ export function useProducts() {
     const now = Date.now();
     const id = product.id || `prod-${now}-${Math.random().toString(36).substring(2, 6)}`;
 
+    // Automatic Category-Based SKU allocation for new products (Preserves existing product SKUs 100%)
+    let finalSku = (product.sku || '').trim().toUpperCase();
+    if (isNew) {
+      const hasCollision = products.some((p) => p.sku.trim().toUpperCase() === finalSku);
+      if (!finalSku || hasCollision) {
+        finalSku = await generateNextCategorySku(product.category, products);
+      }
+    }
+
     const saved: Product = {
       ...product,
+      sku: finalSku,
       id,
       createdAt: (product as Partial<Product>).createdAt || now,
       updatedAt: now,
@@ -191,6 +362,11 @@ export function useProducts() {
       }
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
       setProducts(updated);
+      productsStore.updateMemory((curr) => {
+        const idx = curr.findIndex((p) => p.id === id);
+        return idx !== -1 ? curr.map((p) => (p.id === id ? saved : p)) : [saved, ...curr];
+      });
+      invalidateDataCache('products');
       logActivity(
         isNew ? 'CREATE_PRODUCT' : 'UPDATE_PRODUCT',
         'product',
@@ -202,6 +378,11 @@ export function useProducts() {
     }
 
     await setDoc(doc(db, 'products', id), saved);
+    productsStore.updateMemory((curr) => {
+      const idx = curr.findIndex((p) => p.id === id);
+      return idx !== -1 ? curr.map((p) => (p.id === id ? saved : p)) : [saved, ...curr];
+    });
+    invalidateDataCache('products');
     await logActivity(
       isNew ? 'CREATE_PRODUCT' : 'UPDATE_PRODUCT',
       'product',
@@ -218,6 +399,8 @@ export function useProducts() {
       const updated = products.filter((p) => p.id !== id);
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
       setProducts(updated);
+      productsStore.updateMemory((curr) => curr.filter((p) => p.id !== id));
+      invalidateDataCache('products');
       logActivity(
         'DELETE_PRODUCT',
         'product',
@@ -229,6 +412,8 @@ export function useProducts() {
     }
 
     await deleteDoc(doc(db, 'products', id));
+    productsStore.updateMemory((curr) => curr.filter((p) => p.id !== id));
+    invalidateDataCache('products');
     await logActivity(
       'DELETE_PRODUCT',
       'product',
@@ -242,17 +427,245 @@ export function useProducts() {
 }
 
 // ----------------------------------------------------
+// DYNAMIC CATEGORIES SERVICE & HOOK
+// ----------------------------------------------------
+
+export function useCategories() {
+  const [categories, setCategories] = useState<ProductCategory[]>(() => {
+    initDemoStorage();
+    if (categoriesStore.getLive() !== null) return categoriesStore.getLive()!;
+    if (typeof window === 'undefined') return DEFAULT_PREDEFINED_CATEGORIES;
+    const stored = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+    return stored ? JSON.parse(stored) : DEFAULT_PREDEFINED_CATEGORIES;
+  });
+  const [loading, setLoading] = useState<boolean>(categoriesStore.getLive() === null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCategories = useCallback(async () => {
+    initDemoStorage();
+    if (!isFirebaseConfigured) {
+      const stored = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+      setCategories(stored ? JSON.parse(stored) : DEFAULT_PREDEFINED_CATEGORIES);
+      setLoading(false);
+      return;
+    }
+    if (categoriesStore.getLive() !== null) {
+      setCategories(categoriesStore.getLive()!);
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured) {
+      fetchCategories();
+      return;
+    }
+
+    const unsub = categoriesStore.subscribe((items) => {
+      setCategories(items);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, [fetchCategories]);
+
+  const saveCategory = async (
+    categoryData: Omit<ProductCategory, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
+    user: { uid: string; name: string }
+  ): Promise<ProductCategory> => {
+    const isNew = !categoryData.id;
+    const now = Date.now();
+    const cleanPrefix = sanitizeSkuPrefix(categoryData.skuPrefix || categoryData.name);
+    const cleanName = categoryData.name.trim();
+
+    if (!cleanName) {
+      throw new Error('Category name is required.');
+    }
+
+    if (!cleanPrefix) {
+      throw new Error('Unique SKU prefix is required.');
+    }
+
+    // Unique category name check
+    const dupName = categories.find(
+      (c) => c.name.toLowerCase() === cleanName.toLowerCase() && c.id !== categoryData.id
+    );
+    if (dupName) {
+      throw new Error(`Category "${cleanName}" already exists.`);
+    }
+
+    // Unique SKU prefix check
+    const dupPrefix = categories.find(
+      (c) => c.skuPrefix.toUpperCase() === cleanPrefix && c.id !== categoryData.id
+    );
+    if (dupPrefix) {
+      throw new Error(`SKU prefix "${cleanPrefix}" is already in use by category "${dupPrefix.name}".`);
+    }
+
+    const id = categoryData.id || `cat-${now}-${Math.random().toString(36).substring(2, 6)}`;
+    const saved: ProductCategory = {
+      ...categoryData,
+      id,
+      name: cleanName,
+      skuPrefix: cleanPrefix,
+      active: categoryData.active !== undefined ? categoryData.active : true,
+      createdAt: (categoryData as Partial<ProductCategory>).createdAt || now,
+      updatedAt: now,
+    };
+
+    if (!isFirebaseConfigured) {
+      const current = [...categories];
+      const index = current.findIndex((c) => c.id === id);
+      let updated: ProductCategory[];
+      if (index !== -1) {
+        updated = current.map((c) => (c.id === id ? saved : c));
+      } else {
+        updated = [saved, ...current];
+      }
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
+      setCategories(updated);
+      categoriesStore.updateMemory((curr) => {
+        const idx = curr.findIndex((c) => c.id === id);
+        return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
+      });
+      invalidateDataCache('products');
+      logActivity(
+        isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
+        'category',
+        id,
+        `${isNew ? 'Created' : 'Updated'} category: ${saved.name} (Prefix: ${saved.skuPrefix})`,
+        user
+      );
+      return saved;
+    }
+
+    await setDoc(doc(db, 'categories', id), saved);
+    categoriesStore.updateMemory((curr) => {
+      const idx = curr.findIndex((c) => c.id === id);
+      return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
+    });
+    invalidateDataCache('products');
+    await logActivity(
+      isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
+      'category',
+      id,
+      `${isNew ? 'Created' : 'Updated'} category: ${saved.name} (Prefix: ${saved.skuPrefix})`,
+      user
+    );
+    return saved;
+  };
+
+  const toggleCategoryActive = async (
+    id: string,
+    user: { uid: string; name: string }
+  ): Promise<void> => {
+    const target = categories.find((c) => c.id === id);
+    if (!target) return;
+
+    const newActive = !target.active;
+    const now = Date.now();
+    const updatedCategory: ProductCategory = {
+      ...target,
+      active: newActive,
+      updatedAt: now,
+    };
+
+    if (!isFirebaseConfigured) {
+      const updated = categories.map((c) => (c.id === id ? updatedCategory : c));
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
+      setCategories(updated);
+      categoriesStore.updateMemory((curr) => curr.map((c) => (c.id === id ? updatedCategory : c)));
+      invalidateDataCache('products');
+      logActivity(
+        'UPDATE_CATEGORY',
+        'category',
+        id,
+        `${newActive ? 'Activated' : 'Deactivated'} category: ${target.name}`,
+        user
+      );
+      return;
+    }
+
+    await setDoc(doc(db, 'categories', id), updatedCategory, { merge: true });
+    categoriesStore.updateMemory((curr) => curr.map((c) => (c.id === id ? updatedCategory : c)));
+    invalidateDataCache('products');
+    await logActivity(
+      'UPDATE_CATEGORY',
+      'category',
+      id,
+      `${newActive ? 'Activated' : 'Deactivated'} category: ${target.name}`,
+      user
+    );
+  };
+
+  const deleteCategory = async (
+    id: string,
+    user: { uid: string; name: string }
+  ): Promise<void> => {
+    const target = categories.find((c) => c.id === id);
+    if (!target) return;
+
+    // Protection: verify no existing products are assigned to this category
+    const liveProducts = getLiveProducts() || [];
+    const assignedCount = liveProducts.filter((p) => p.category?.toLowerCase() === target.name.toLowerCase()).length;
+    if (assignedCount > 0) {
+      throw new Error(
+        `Cannot delete "${target.name}" because ${assignedCount} product(s) are currently assigned to this category. Please reassign or delete those products first.`
+      );
+    }
+
+    if (!isFirebaseConfigured) {
+      const updated = categories.filter((c) => c.id !== id);
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
+      setCategories(updated);
+      categoriesStore.updateMemory((curr) => curr.filter((c) => c.id !== id));
+      invalidateDataCache('products');
+      logActivity(
+        'DELETE_CATEGORY',
+        'category',
+        id,
+        `Deleted category: ${target.name} (SKU Prefix: ${target.skuPrefix})`,
+        user
+      );
+      return;
+    }
+
+    await deleteDoc(doc(db, 'categories', id));
+    categoriesStore.updateMemory((curr) => curr.filter((c) => c.id !== id));
+    invalidateDataCache('products');
+    await logActivity(
+      'DELETE_CATEGORY',
+      'category',
+      id,
+      `Deleted category: ${target.name} (SKU Prefix: ${target.skuPrefix})`,
+      user
+    );
+  };
+
+  return {
+    categories,
+    loading,
+    error,
+    saveCategory,
+    toggleCategoryActive,
+    deleteCategory,
+    refresh: fetchCategories,
+  };
+}
+
+// ----------------------------------------------------
 // CUSTOMERS SERVICE & HOOK
 // ----------------------------------------------------
 
 export function useCustomers() {
   const [customers, setCustomers] = useState<Customer[]>(() => {
     initDemoStorage();
+    if (customersStore.getLive() !== null) return customersStore.getLive()!;
     if (typeof window === 'undefined') return INITIAL_CUSTOMERS;
     const stored = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
     return stored ? JSON.parse(stored) : INITIAL_CUSTOMERS;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(customersStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCustomers = useCallback(async () => {
@@ -263,34 +676,8 @@ export function useCustomers() {
       setLoading(false);
       return;
     }
-
-    try {
-      const snapshot = await getDocs(customersCol);
-      if (snapshot.empty) {
-        if (!seededCollections.has('customers')) {
-          seededCollections.add('customers');
-          for (const c of INITIAL_CUSTOMERS) {
-            try {
-              await setDoc(doc(db, 'customers', c.id), c);
-            } catch {
-              // ignore seed write error if any
-            }
-          }
-        }
-        setCustomers(INITIAL_CUSTOMERS);
-      } else {
-        const list = snapshot.docs.map((docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        }));
-        setCustomers(list);
-      }
-    } catch (err) {
-      console.warn('[Firestore] Falling back to local customers:', err);
-      const stored = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-      setCustomers(stored ? JSON.parse(stored) : INITIAL_CUSTOMERS);
-      setError((err as Error).message);
-    } finally {
+    if (customersStore.getLive() !== null) {
+      setCustomers(customersStore.getLive()!);
       setLoading(false);
     }
   }, []);
@@ -301,30 +688,12 @@ export function useCustomers() {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      customersCol,
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((docSnap) => ({
-            ...docSnap.data(),
-            id: docSnap.id,
-          }));
-          setCustomers(list);
-        } else if (!seededCollections.has('customers')) {
-          seededCollections.add('customers');
-          fetchCustomers();
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('[Firestore customers listener inactive, using local data]:', err);
-        const stored = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-        setCustomers(stored ? JSON.parse(stored) : INITIAL_CUSTOMERS);
-        setLoading(false);
-      }
-    );
+    const unsub = customersStore.subscribe((items) => {
+      setCustomers(items);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [fetchCustomers]);
 
   const saveCustomer = async (
@@ -355,6 +724,11 @@ export function useCustomers() {
       }
       localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updated));
       setCustomers(updated);
+      customersStore.updateMemory((curr) => {
+        const idx = curr.findIndex((c) => c.id === id);
+        return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
+      });
+      invalidateDataCache('orders');
       logActivity(
         isNew ? 'CREATE_CUSTOMER' : 'UPDATE_CUSTOMER',
         'customer',
@@ -366,6 +740,11 @@ export function useCustomers() {
     }
 
     await setDoc(doc(db, 'customers', id), saved);
+    customersStore.updateMemory((curr) => {
+      const idx = curr.findIndex((c) => c.id === id);
+      return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
+    });
+    invalidateDataCache('orders');
     await logActivity(
       isNew ? 'CREATE_CUSTOMER' : 'UPDATE_CUSTOMER',
       'customer',
@@ -386,11 +765,12 @@ export function useCustomers() {
 export function useOrders() {
   const [orders, setOrders] = useState<Order[]>(() => {
     initDemoStorage();
+    if (ordersStore.getLive() !== null) return ordersStore.getLive()!;
     if (typeof window === 'undefined') return INITIAL_ORDERS;
     const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
     return stored ? JSON.parse(stored) : INITIAL_ORDERS;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(ordersStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
@@ -401,34 +781,8 @@ export function useOrders() {
       setLoading(false);
       return;
     }
-
-    try {
-      const snapshot = await getDocs(query(ordersCol, orderBy('createdAt', 'desc')));
-      if (snapshot.empty) {
-        if (!seededCollections.has('orders')) {
-          seededCollections.add('orders');
-          for (const o of INITIAL_ORDERS) {
-            try {
-              await setDoc(doc(db, 'orders', o.id), o);
-            } catch {
-              // ignore seed write error if any
-            }
-          }
-        }
-        setOrders(INITIAL_ORDERS);
-      } else {
-        const list = snapshot.docs.map((docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        }));
-        setOrders(list);
-      }
-    } catch (err) {
-      console.warn('[Firestore] Falling back to local orders:', err);
-      const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
-      setOrders(stored ? JSON.parse(stored) : INITIAL_ORDERS);
-      setError((err as Error).message);
-    } finally {
+    if (ordersStore.getLive() !== null) {
+      setOrders(ordersStore.getLive()!);
       setLoading(false);
     }
   }, []);
@@ -439,30 +793,12 @@ export function useOrders() {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      query(ordersCol, orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((docSnap) => ({
-            ...docSnap.data(),
-            id: docSnap.id,
-          }));
-          setOrders(list);
-        } else if (!seededCollections.has('orders')) {
-          seededCollections.add('orders');
-          fetchOrders();
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('[Firestore orders listener inactive, using local data]:', err);
-        const stored = localStorage.getItem(STORAGE_KEYS.ORDERS);
-        setOrders(stored ? JSON.parse(stored) : INITIAL_ORDERS);
-        setLoading(false);
-      }
-    );
+    const unsub = ordersStore.subscribe((items) => {
+      setOrders(items);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [fetchOrders]);
 
   /**
@@ -514,6 +850,11 @@ export function useOrders() {
       }
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(updated));
       setOrders(updated);
+      ordersStore.updateMemory((curr) => {
+        const idx = curr.findIndex((o) => o.id === id);
+        return idx !== -1 ? curr.map((o) => (o.id === id ? saved : o)) : [saved, ...curr];
+      });
+      invalidateDataCache('orders');
 
       // Update customer stats
       if (saved.customerId) {
@@ -525,6 +866,11 @@ export function useOrders() {
           storedCustomers[cIdx].totalOrders = (storedCustomers[cIdx].totalOrders || 0) + (isNew ? 1 : 0);
           storedCustomers[cIdx].totalSpent = (storedCustomers[cIdx].totalSpent || 0) + (isNew ? saved.total : 0);
           localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(storedCustomers));
+          customersStore.updateMemory((curr) => {
+            const idx = curr.findIndex((c) => c.id === saved.customerId);
+            if (idx === -1) return curr;
+            return curr.map((c) => (c.id === saved.customerId ? storedCustomers[cIdx] : c));
+          });
         }
       }
 
@@ -539,21 +885,33 @@ export function useOrders() {
     }
 
     await setDoc(doc(db, 'orders', id), saved);
+    ordersStore.updateMemory((curr) => {
+      const idx = curr.findIndex((o) => o.id === id);
+      return idx !== -1 ? curr.map((o) => (o.id === id ? saved : o)) : [saved, ...curr];
+    });
+    invalidateDataCache('orders');
 
-    // Update customer stats in Firestore
+    // Update customer stats in Firestore (Optimized: single getDoc reads only 1 doc!)
     if (saved.customerId && isNew) {
       try {
         const customerRef = doc(db, 'customers', saved.customerId);
-        const custSnap = await getDocs(customersCol);
-        const target = custSnap.docs.find((d) => d.id === saved.customerId);
-        if (target) {
-          const currentTotal = target.data().totalSpent || 0;
-          const currentCount = target.data().totalOrders || 0;
+        const custDoc = await getDoc(customerRef);
+        if (custDoc.exists()) {
+          const cData = custDoc.data();
+          const currentTotal = cData.totalSpent || 0;
+          const currentCount = cData.totalOrders || 0;
           await updateDoc(customerRef, {
             totalOrders: currentCount + 1,
             totalSpent: currentTotal + saved.total,
             updatedAt: now,
           });
+          customersStore.updateMemory((curr) =>
+            curr.map((c) =>
+              c.id === saved.customerId
+                ? { ...c, totalOrders: currentCount + 1, totalSpent: currentTotal + saved.total, updatedAt: now }
+                : c
+            )
+          );
         }
       } catch (e) {
         console.warn('Customer stats update error:', e);
@@ -630,6 +988,8 @@ export function useOrders() {
       const current = orders.map((o) => (o.id === orderId ? updatedOrder : o));
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(current));
       setOrders(current);
+      ordersStore.updateMemory((curr) => curr.map((o) => (o.id === orderId ? updatedOrder : o)));
+      invalidateDataCache('orders');
       logActivity(
         'ORDER_STATUS_CHANGED',
         'order',
@@ -641,6 +1001,8 @@ export function useOrders() {
     }
 
     await setDoc(doc(db, 'orders', orderId), updatedOrder);
+    ordersStore.updateMemory((curr) => curr.map((o) => (o.id === orderId ? updatedOrder : o)));
+    invalidateDataCache('orders');
     await logActivity(
       'ORDER_STATUS_CHANGED',
       'order',
@@ -660,11 +1022,12 @@ export function useOrders() {
 export function useStockMovements() {
   const [movements, setMovements] = useState<StockMovement[]>(() => {
     initDemoStorage();
+    if (stockMovementsStore.getLive() !== null) return stockMovementsStore.getLive()!;
     if (typeof window === 'undefined') return INITIAL_STOCK_MOVEMENTS;
     const stored = localStorage.getItem(STORAGE_KEYS.STOCK_MOVEMENTS);
     return stored ? JSON.parse(stored) : INITIAL_STOCK_MOVEMENTS;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(stockMovementsStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMovements = useCallback(async () => {
@@ -675,34 +1038,8 @@ export function useStockMovements() {
       setLoading(false);
       return;
     }
-
-    try {
-      const snapshot = await getDocs(query(stockMovementsCol, orderBy('createdAt', 'desc')));
-      if (snapshot.empty) {
-        if (!seededCollections.has('stock_movements')) {
-          seededCollections.add('stock_movements');
-          for (const sm of INITIAL_STOCK_MOVEMENTS) {
-            try {
-              await setDoc(doc(db, 'stock_movements', sm.id), sm);
-            } catch {
-              // ignore seed write error if any
-            }
-          }
-        }
-        setMovements(INITIAL_STOCK_MOVEMENTS);
-      } else {
-        const list = snapshot.docs.map((docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        }));
-        setMovements(list);
-      }
-    } catch (err) {
-      console.warn('[Firestore] Falling back to local stock movements:', err);
-      const stored = localStorage.getItem(STORAGE_KEYS.STOCK_MOVEMENTS);
-      setMovements(stored ? JSON.parse(stored) : INITIAL_STOCK_MOVEMENTS);
-      setError((err as Error).message);
-    } finally {
+    if (stockMovementsStore.getLive() !== null) {
+      setMovements(stockMovementsStore.getLive()!);
       setLoading(false);
     }
   }, []);
@@ -713,30 +1050,12 @@ export function useStockMovements() {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      query(stockMovementsCol, orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((docSnap) => ({
-            ...docSnap.data(),
-            id: docSnap.id,
-          }));
-          setMovements(list);
-        } else if (!seededCollections.has('stock_movements')) {
-          seededCollections.add('stock_movements');
-          fetchMovements();
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('[Firestore stock movements listener inactive, using local data]:', err);
-        const stored = localStorage.getItem(STORAGE_KEYS.STOCK_MOVEMENTS);
-        setMovements(stored ? JSON.parse(stored) : INITIAL_STOCK_MOVEMENTS);
-        setLoading(false);
-      }
-    );
+    const unsub = stockMovementsStore.subscribe((items) => {
+      setMovements(items);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [fetchMovements]);
 
   const addStockAdjustment = async (
@@ -769,6 +1088,9 @@ export function useStockMovements() {
       setMovements(updated);
     }
 
+    stockMovementsStore.updateMemory((curr) => [recorded, ...curr]);
+    invalidateDataCache('products');
+
     await logActivity(
       'STOCK_ADJUSTMENT',
       'stock',
@@ -790,11 +1112,12 @@ export function useStockMovements() {
 export function useInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
     initDemoStorage();
+    if (invoicesStore.getLive() !== null) return invoicesStore.getLive()!;
     if (typeof window === 'undefined') return INITIAL_INVOICES;
     const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
     return stored ? JSON.parse(stored) : INITIAL_INVOICES;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(invoicesStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
@@ -805,34 +1128,8 @@ export function useInvoices() {
       setLoading(false);
       return;
     }
-
-    try {
-      const snapshot = await getDocs(query(invoicesCol, orderBy('createdAt', 'desc')));
-      if (snapshot.empty) {
-        if (!seededCollections.has('invoices')) {
-          seededCollections.add('invoices');
-          for (const inv of INITIAL_INVOICES) {
-            try {
-              await setDoc(doc(db, 'invoices', inv.id), inv);
-            } catch {
-              // ignore seed write error if any
-            }
-          }
-        }
-        setInvoices(INITIAL_INVOICES);
-      } else {
-        const list = snapshot.docs.map((docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        }));
-        setInvoices(list);
-      }
-    } catch (err) {
-      console.warn('[Firestore] Falling back to local invoices:', err);
-      const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
-      setInvoices(stored ? JSON.parse(stored) : INITIAL_INVOICES);
-      setError((err as Error).message);
-    } finally {
+    if (invoicesStore.getLive() !== null) {
+      setInvoices(invoicesStore.getLive()!);
       setLoading(false);
     }
   }, []);
@@ -843,30 +1140,12 @@ export function useInvoices() {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      query(invoicesCol, orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((docSnap) => ({
-            ...docSnap.data(),
-            id: docSnap.id,
-          }));
-          setInvoices(list);
-        } else if (!seededCollections.has('invoices')) {
-          seededCollections.add('invoices');
-          fetchInvoices();
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('[Firestore invoices listener inactive, using local data]:', err);
-        const stored = localStorage.getItem(STORAGE_KEYS.INVOICES);
-        setInvoices(stored ? JSON.parse(stored) : INITIAL_INVOICES);
-        setLoading(false);
-      }
-    );
+    const unsub = invoicesStore.subscribe((items) => {
+      setInvoices(items);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [fetchInvoices]);
 
   const saveInvoice = async (
@@ -896,6 +1175,11 @@ export function useInvoices() {
       }
       localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
       setInvoices(updated);
+      invoicesStore.updateMemory((curr) => {
+        const idx = curr.findIndex((inv) => inv.id === id);
+        return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
+      });
+      invalidateDataCache('orders');
       logActivity(
         isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
         'invoice',
@@ -907,6 +1191,11 @@ export function useInvoices() {
     }
 
     await setDoc(doc(db, 'invoices', id), saved);
+    invoicesStore.updateMemory((curr) => {
+      const idx = curr.findIndex((inv) => inv.id === id);
+      return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
+    });
+    invalidateDataCache('orders');
     await logActivity(
       isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
       'invoice',
@@ -980,6 +1269,8 @@ export function useInvoices() {
       const current = invoices.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv));
       localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(current));
       setInvoices(current);
+      invoicesStore.updateMemory((curr) => curr.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv)));
+      invalidateDataCache('orders');
       logActivity(
         'RECORD_PAYMENT',
         'invoice',
@@ -991,6 +1282,8 @@ export function useInvoices() {
     }
 
     await setDoc(doc(db, 'invoices', invoiceId), updatedInvoice);
+    invoicesStore.updateMemory((curr) => curr.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv)));
+    invalidateDataCache('orders');
     await logActivity(
       'RECORD_PAYMENT',
       'invoice',
@@ -1007,6 +1300,8 @@ export function useInvoices() {
       const updated = invoices.filter((inv) => inv.id !== id);
       localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
       setInvoices(updated);
+      invoicesStore.updateMemory((curr) => curr.filter((inv) => inv.id !== id));
+      invalidateDataCache('orders');
       logActivity(
         'DELETE_INVOICE',
         'invoice',
@@ -1018,6 +1313,8 @@ export function useInvoices() {
     }
 
     await deleteDoc(doc(db, 'invoices', id));
+    invoicesStore.updateMemory((curr) => curr.filter((inv) => inv.id !== id));
+    invalidateDataCache('orders');
     await logActivity(
       'DELETE_INVOICE',
       'invoice',
@@ -1045,11 +1342,12 @@ export function useInvoices() {
 export function useDeliveries() {
   const [deliveries, setDeliveries] = useState<Delivery[]>(() => {
     initDemoStorage();
+    if (deliveriesStore.getLive() !== null) return deliveriesStore.getLive()!;
     if (typeof window === 'undefined') return INITIAL_DELIVERIES;
     const stored = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
     return stored ? JSON.parse(stored) : INITIAL_DELIVERIES;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(deliveriesStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDeliveries = useCallback(async () => {
@@ -1060,34 +1358,8 @@ export function useDeliveries() {
       setLoading(false);
       return;
     }
-
-    try {
-      const snapshot = await getDocs(query(deliveriesCol, orderBy('createdAt', 'desc')));
-      if (snapshot.empty) {
-        if (!seededCollections.has('deliveries')) {
-          seededCollections.add('deliveries');
-          for (const del of INITIAL_DELIVERIES) {
-            try {
-              await setDoc(doc(db, 'deliveries', del.id), del);
-            } catch {
-              // ignore seed write error if any
-            }
-          }
-        }
-        setDeliveries(INITIAL_DELIVERIES);
-      } else {
-        const list = snapshot.docs.map((docSnap) => ({
-          ...docSnap.data(),
-          id: docSnap.id,
-        }));
-        setDeliveries(list);
-      }
-    } catch (err) {
-      console.warn('[Firestore] Falling back to local deliveries:', err);
-      const stored = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
-      setDeliveries(stored ? JSON.parse(stored) : INITIAL_DELIVERIES);
-      setError((err as Error).message);
-    } finally {
+    if (deliveriesStore.getLive() !== null) {
+      setDeliveries(deliveriesStore.getLive()!);
       setLoading(false);
     }
   }, []);
@@ -1098,30 +1370,12 @@ export function useDeliveries() {
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      query(deliveriesCol, orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((docSnap) => ({
-            ...docSnap.data(),
-            id: docSnap.id,
-          }));
-          setDeliveries(list);
-        } else if (!seededCollections.has('deliveries')) {
-          seededCollections.add('deliveries');
-          fetchDeliveries();
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('[Firestore deliveries listener inactive, using local data]:', err);
-        const stored = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
-        setDeliveries(stored ? JSON.parse(stored) : INITIAL_DELIVERIES);
-        setLoading(false);
-      }
-    );
+    const unsub = deliveriesStore.subscribe((items) => {
+      setDeliveries(items);
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [fetchDeliveries]);
 
   // Synchronize linked order when delivery status changes
@@ -1148,6 +1402,9 @@ export function useDeliveries() {
         }
         storedOrders[oIdx].updatedAt = Date.now();
         localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(storedOrders));
+        ordersStore.updateMemory((curr) =>
+          curr.map((o) => (o.id === storedOrders[oIdx].id ? storedOrders[oIdx] : o))
+        );
       }
 
       if (isFirebaseConfigured) {
@@ -1161,6 +1418,9 @@ export function useDeliveries() {
         else if (deliveryStatus === 'dispatched' || deliveryStatus === 'in_transit') updates.orderStatus = 'shipped';
         else if (deliveryStatus === 'returned') updates.orderStatus = 'returned';
         await updateDoc(orderRef, updates);
+        ordersStore.updateMemory((curr) =>
+          curr.map((o) => (o.id === orderId ? { ...o, ...updates } : o))
+        );
       }
     } catch (err) {
       console.warn('Error syncing linked order status:', err);
@@ -1196,6 +1456,11 @@ export function useDeliveries() {
       }
       localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(updated));
       setDeliveries(updated);
+      deliveriesStore.updateMemory((curr) => {
+        const idx = curr.findIndex((del) => del.id === id);
+        return idx !== -1 ? curr.map((del) => (del.id === id ? saved : del)) : [saved, ...curr];
+      });
+      invalidateDataCache('deliveries');
       logActivity(
         isNew ? 'CREATE_DELIVERY' : 'UPDATE_DELIVERY',
         'delivery',
@@ -1207,6 +1472,11 @@ export function useDeliveries() {
     }
 
     await setDoc(doc(db, 'deliveries', id), saved);
+    deliveriesStore.updateMemory((curr) => {
+      const idx = curr.findIndex((del) => del.id === id);
+      return idx !== -1 ? curr.map((del) => (del.id === id ? saved : del)) : [saved, ...curr];
+    });
+    invalidateDataCache('deliveries');
     await logActivity(
       isNew ? 'CREATE_DELIVERY' : 'UPDATE_DELIVERY',
       'delivery',
@@ -1244,6 +1514,8 @@ export function useDeliveries() {
       const current = deliveries.map((del) => (del.id === deliveryId ? updated : del));
       localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(current));
       setDeliveries(current);
+      deliveriesStore.updateMemory((curr) => curr.map((del) => (del.id === deliveryId ? updated : del)));
+      invalidateDataCache('deliveries');
       logActivity(
         'DELIVERY_STATUS_CHANGED',
         'delivery',
@@ -1255,6 +1527,8 @@ export function useDeliveries() {
     }
 
     await setDoc(doc(db, 'deliveries', deliveryId), updated);
+    deliveriesStore.updateMemory((curr) => curr.map((del) => (del.id === deliveryId ? updated : del)));
+    invalidateDataCache('deliveries');
     await logActivity(
       'DELIVERY_STATUS_CHANGED',
       'delivery',
@@ -1270,6 +1544,8 @@ export function useDeliveries() {
       const updated = deliveries.filter((del) => del.id !== id);
       localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(updated));
       setDeliveries(updated);
+      deliveriesStore.updateMemory((curr) => curr.filter((del) => del.id !== id));
+      invalidateDataCache('deliveries');
       logActivity(
         'DELETE_DELIVERY',
         'delivery',
@@ -1281,6 +1557,8 @@ export function useDeliveries() {
     }
 
     await deleteDoc(doc(db, 'deliveries', id));
+    deliveriesStore.updateMemory((curr) => curr.filter((del) => del.id !== id));
+    invalidateDataCache('deliveries');
     await logActivity(
       'DELETE_DELIVERY',
       'delivery',

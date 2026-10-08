@@ -1,6 +1,13 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, Auth } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, Firestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  connectFirestoreEmulator,
+  Firestore,
+} from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/storage';
 
 const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY || '';
@@ -46,9 +53,23 @@ if (!getApps().length) {
   app = getApp();
 }
 
-// Export instances
+// Export instances with persistent local cache enabled to avoid Firestore read limits
 export const auth: Auth = getAuth(app);
-export const db: Firestore = getFirestore(app);
+
+function createOptimizedFirestore(firebaseApp: FirebaseApp): Firestore {
+  try {
+    return initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // If Firestore was already initialized or localCache is unsupported in environment
+    return getFirestore(firebaseApp);
+  }
+}
+
+export const db: Firestore = createOptimizedFirestore(app);
 export const storage: FirebaseStorage = getStorage(app);
 
 // Connect to Emulators if requested
