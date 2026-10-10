@@ -18,12 +18,15 @@ import {
   Banknote,
   Boxes,
   Minus,
+  Printer,
+  RotateCcw,
 } from 'lucide-react';
-import { Product, Customer, OrderItem, Order, PaymentMethod, PaymentStatus, OrderStatus } from '@/types';
+import { Product, Customer, OrderItem, Order, Invoice, PaymentMethod, PaymentStatus, OrderStatus } from '@/types';
 import { useProducts, useCustomers, useOrders } from '@/lib/dataStore';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
 import { CustomerModal } from '@/pages/customers/CustomerModal';
+import { printOrderReceipt, printA4InvoiceDocument } from '@/lib/printUtils';
 
 interface CreateOrderPageProps {
   onBack: () => void;
@@ -40,7 +43,11 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
   const { customers, saveCustomer } = useCustomers();
   const { saveOrder } = useOrders();
   const { userProfile } = useAuth();
-  const { notifySuccess, notifyWarning, notifyError } = useNotification();
+  const { notifySuccess, notifyWarning, notifyError, notifyInfo } = useNotification();
+
+  // Mode State (Retail vs Wholesale)
+  const [orderType, setOrderType] = useState<'retail' | 'wholesale'>('retail');
+  const isWholesale = orderType === 'wholesale';
 
   // Customer State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>(
@@ -108,12 +115,49 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
     setCustomerSearch('');
   };
 
+  // Helper to determine unit price based on retail vs wholesale mode
+  const getProductUnitPrice = (product: Product, mode: 'retail' | 'wholesale' = orderType): number => {
+    if (mode === 'wholesale' && product.wholesalePrice !== undefined && product.wholesalePrice > 0) {
+      return product.wholesalePrice;
+    }
+    return product.sellingPrice;
+  };
+
+  // Switch between Retail Sale and Wholesale Sale mode
+  const handleToggleOrderType = (newType: 'retail' | 'wholesale') => {
+    if (newType === orderType) return;
+    setOrderType(newType);
+
+    // Update all existing items in the order to match the new mode
+    setItems((prevItems) =>
+      prevItems.map((item) => {
+        const product = products.find((p) => p.id === item.productId);
+        if (!product) return item;
+        const newUnitPrice = getProductUnitPrice(product, newType);
+        return {
+          ...item,
+          unitPrice: newUnitPrice,
+          lineTotal: Math.max(0, item.quantity * newUnitPrice - item.discount),
+        };
+      })
+    );
+
+    notifyInfo(
+      newType === 'wholesale'
+        ? 'Switched to Wholesale Sale mode. Applied wholesale prices to items where available.'
+        : 'Switched to Retail Sale mode. Applied standard retail prices.'
+    );
+  };
+
   // Add product to line items (or increment quantity if already added)
   const handleAddProduct = (product: Product, quantityToAdd: number = 1) => {
     if (product.stockQuantity <= 0) {
       notifyWarning(`Product "${product.name}" is out of stock!`);
       return;
     }
+
+    const unitPrice = getProductUnitPrice(product, orderType);
+    const isWholesaleApplied = orderType === 'wholesale' && product.wholesalePrice !== undefined && product.wholesalePrice > 0;
 
     setItems((prevItems) => {
       const existingIdx = prevItems.findIndex((i) => i.productId === product.id);
@@ -130,12 +174,12 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
         }
 
         const updated = [...prevItems];
-        const unitPrice = updated[existingIdx].unitPrice;
+        const itemUnitPrice = updated[existingIdx].unitPrice;
         const discount = updated[existingIdx].discount;
         updated[existingIdx] = {
           ...updated[existingIdx],
           quantity: newQty,
-          lineTotal: Math.max(0, newQty * unitPrice - discount),
+          lineTotal: Math.max(0, newQty * itemUnitPrice - discount),
         };
         return updated;
       }
@@ -151,13 +195,17 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
         sku: product.sku,
         productName: product.name,
         quantity: quantityToAdd,
-        unitPrice: product.sellingPrice,
+        unitPrice,
         discount: 0,
-        lineTotal: product.sellingPrice * quantityToAdd,
+        lineTotal: unitPrice * quantityToAdd,
         ...(product.imageUrl ? { imageUrl: product.imageUrl } : {}),
       };
 
-      notifySuccess(`Added ${product.name}`);
+      notifySuccess(
+        `Added ${product.name}${
+          isWholesaleApplied ? ` (Wholesale: Rs. ${unitPrice.toFixed(2)})` : ''
+        }`
+      );
       return [newItem, ...prevItems];
     });
   };
@@ -289,6 +337,7 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
         paymentStatus,
         orderStatus,
         deliveryStatus: 'pending',
+        orderType: isWholesale ? 'wholesale' : 'retail',
         ...(cleanNotes ? { notes: cleanNotes } : {}),
         createdBy: userProfile?.name || 'Danix Operator',
       };
@@ -299,7 +348,16 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
       });
 
       setCreatedOrder(created);
-      notifySuccess(`Order #${orderNumber} created successfully! Stock deducted.`);
+      notifySuccess(`Order #${orderNumber} (${isWholesale ? 'Wholesale' : 'Retail'}) placed successfully! Stock deducted.`);
+
+      // Automatically trigger popup-free printing of the receipt slip immediately upon order completion!
+      printOrderReceipt(created, {
+        title: `Order Receipt - ${created.orderNumber}`,
+        onComplete: () => {
+          notifySuccess(`Order #${created.orderNumber} receipt sent to printer automatically`);
+        },
+      });
+
       if (onOrderCreated) {
         onOrderCreated(created);
       }
@@ -308,6 +366,69 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleReprintSlip = () => {
+    if (!createdOrder) return;
+    printOrderReceipt(createdOrder, {
+      title: `Order Receipt - ${createdOrder.orderNumber}`,
+      onComplete: () => {
+        notifySuccess(`Receipt for Order #${createdOrder.orderNumber} re-sent to printer`);
+      },
+    });
+  };
+
+  const handlePrintA4 = () => {
+    if (!createdOrder) return;
+    const inv: Invoice = {
+      id: `inv-${createdOrder.id}`,
+      invoiceNumber: createdOrder.orderNumber.replace('ORD-', 'INV-'),
+      orderId: createdOrder.id,
+      orderNumber: createdOrder.orderNumber,
+      ...(createdOrder.customerId ? { customerId: createdOrder.customerId } : {}),
+      customerSnapshot: {
+        name: createdOrder.customerName,
+        phone: createdOrder.customerPhone,
+        address: createdOrder.customerAddress || '',
+      },
+      items: createdOrder.items,
+      subtotal: createdOrder.subtotal,
+      discount: createdOrder.discount || 0,
+      deliveryFee: createdOrder.deliveryFee || 0,
+      total: createdOrder.total,
+      paidAmount: createdOrder.paymentStatus === 'paid' ? createdOrder.total : 0,
+      paymentStatus: createdOrder.paymentStatus,
+      paymentMethod: createdOrder.paymentMethod,
+      invoiceType: isWholesale ? 'wholesale' : 'retail',
+      notes: createdOrder.notes,
+      createdBy: createdOrder.createdBy,
+      createdAt: createdOrder.createdAt,
+    };
+    printA4InvoiceDocument(inv, {
+      title: `Invoice - ${inv.invoiceNumber}`,
+      onComplete: () => {
+        notifySuccess(`A4 Invoice for Order #${createdOrder.orderNumber} sent to printer`);
+      },
+    });
+  };
+
+  const handleStartNewOrder = () => {
+    setCreatedOrder(null);
+    setSelectedCustomerId('');
+    setCustomerSearch('');
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerAddress('');
+    setItems([]);
+    setOrderDiscount(0);
+    setDeliveryFee(350);
+    setIsFreeDelivery(false);
+    setOrderNotes('');
+    setPaymentMethod('cod');
+    setPaymentStatus('unpaid');
+    setOrderStatus('confirmed');
+    setProductSearch('');
+    setBarcodeInput('');
   };
 
   return (
@@ -323,7 +444,18 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-black text-navy-900 tracking-tight">Create New Order</h1>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-2xl font-black text-navy-900 tracking-tight">Create New Order</h1>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                  isWholesale
+                    ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                }`}
+              >
+                {isWholesale ? '📦 Wholesale Mode' : '🛍️ Retail Mode'}
+              </span>
+            </div>
             <p className="text-xs text-slate-500">
               Live inventory verification, customer matching, and automated stock deductions
             </p>
@@ -356,6 +488,69 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
                 <span>Place Order (Rs. {grandTotal.toLocaleString('en-LK')})</span>
               </>
             )}
+          </button>
+        </div>
+      </div>
+
+      {/* Sale Mode Selector Card / Pills */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+            Order Selling Channel & Pricing Mode
+          </span>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-extrabold text-navy-900">
+              {isWholesale ? '📦 Wholesale Sale (B2B)' : '🛍️ Retail Sale (Direct Customer)'}
+            </h2>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                isWholesale
+                  ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+              }`}
+            >
+              {isWholesale ? 'Wholesale Pricing Active' : 'Standard Retail Pricing'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {isWholesale
+              ? 'Automatically applies product wholesale rates. Switching channels recalculates cart items.'
+              : 'Standard retail selling prices applied to order items and printed invoice.'}
+          </p>
+        </div>
+
+        {/* Switcher Pills */}
+        <div className="inline-flex rounded-xl bg-slate-100 p-1.5 border border-slate-200 shrink-0 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => handleToggleOrderType('retail')}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${
+              !isWholesale
+                ? 'bg-white text-navy-900 shadow-sm border border-slate-200/80'
+                : 'text-slate-600 hover:text-navy-900'
+            }`}
+          >
+            <span>🛍️</span>
+            <span>Retail Sale</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleToggleOrderType('wholesale')}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${
+              isWholesale
+                ? 'bg-sky-600 text-white shadow-sm shadow-sky-600/30'
+                : 'text-slate-600 hover:text-navy-900'
+            }`}
+          >
+            <span>📦</span>
+            <span>Wholesale Sale</span>
+            <span
+              className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase ${
+                isWholesale ? 'bg-sky-700 text-white' : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              B2B
+            </span>
           </button>
         </div>
       </div>
@@ -539,7 +734,20 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
                     </div>
 
                     <div className="flex items-center gap-3 shrink-0">
-                      <span className="font-bold text-navy-900">Rs. {p.sellingPrice.toFixed(2)}</span>
+                      <div className="text-right">
+                        <span className="font-bold text-navy-900 block">
+                          Rs. {getProductUnitPrice(p).toFixed(2)}
+                        </span>
+                        {isWholesale && p.wholesalePrice && p.wholesalePrice > 0 ? (
+                          <span className="text-[10px] font-bold text-sky-600 block">
+                            Wholesale Rate
+                          </span>
+                        ) : isWholesale ? (
+                          <span className="text-[10px] text-slate-400 block">
+                            Retail (no WS)
+                          </span>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         disabled={!inStock}
@@ -604,7 +812,12 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
                             </span>
                           </td>
                           <td className="px-2 py-3 font-semibold text-slate-700">
-                            Rs. {item.unitPrice.toFixed(2)}
+                            <div>Rs. {item.unitPrice.toFixed(2)}</div>
+                            {isWholesale && prod?.wholesalePrice && prod.wholesalePrice === item.unitPrice && (
+                              <span className="inline-block text-[9px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded uppercase mt-0.5">
+                                Wholesale
+                              </span>
+                            )}
                           </td>
                           <td className="px-2 py-3">
                             <div className="flex items-center justify-center gap-1.5">
@@ -844,6 +1057,94 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
             handleSelectCustomer(saved);
           }}
         />
+      )}
+
+      {/* Order Success & Print Modal */}
+      {createdOrder && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/75 p-4 backdrop-blur-sm animate-in fade-in"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+            {/* Success Header */}
+            <div className="text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 mb-3 shadow-inner">
+                <CheckCircle2 className="h-8 w-8" />
+              </div>
+              <h3 className="text-xl font-black text-navy-900">Order Placed Successfully!</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Order receipt slip was automatically dispatched to your printer.
+              </p>
+            </div>
+
+            {/* Order Brief Summary Box */}
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                <span className="font-semibold text-slate-600">Order Reference:</span>
+                <span className="font-mono font-bold text-navy-900 text-sm">{createdOrder.orderNumber}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Customer:</span>
+                <span className="font-bold text-slate-900">{createdOrder.customerName} ({createdOrder.customerPhone})</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Items Count:</span>
+                <span className="font-semibold text-slate-900">{createdOrder.items.reduce((s, i) => s + i.quantity, 0)} units</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Payment Status:</span>
+                <span className="font-bold uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  {createdOrder.paymentStatus} • {createdOrder.paymentMethod}
+                </span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200 text-sm font-black text-navy-900">
+                <span>Grand Total:</span>
+                <span className="text-brand-600 font-mono">Rs. {createdOrder.total.toLocaleString('en-LK', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* Print & Action Buttons */}
+            <div className="mt-6 space-y-2.5">
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleReprintSlip}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-bold text-navy-900 hover:bg-slate-50 transition-colors shadow-sm"
+                >
+                  <Printer className="h-4 w-4 text-brand-500" />
+                  <span>Re-print Slip</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintA4}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white py-2.5 px-3 text-xs font-bold text-navy-900 hover:bg-slate-50 transition-colors shadow-sm"
+                >
+                  <FileText className="h-4 w-4 text-sky-600" />
+                  <span>Print A4 Invoice</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleStartNewOrder}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 px-4 text-xs font-black text-white hover:bg-brand-600 transition-colors shadow-md shadow-brand-500/25"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>New Order</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-100 py-3 px-4 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  <span>Orders List</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

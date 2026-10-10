@@ -481,8 +481,15 @@ export const ProductsPage: React.FC = () => {
                       </td>
 
                       {/* Selling Price */}
-                      <td className="px-3 py-3 font-bold text-navy-900">
-                        Rs. {p.sellingPrice.toFixed(2)}
+                      <td className="px-3 py-3">
+                        <span className="font-bold text-navy-900 block">
+                          Rs. {p.sellingPrice.toFixed(2)}
+                        </span>
+                        {p.wholesalePrice !== undefined && p.wholesalePrice > 0 && (
+                          <span className="text-[10px] text-sky-700 font-semibold block" title="Wholesale B2B Price">
+                            WS: Rs. {p.wholesalePrice.toFixed(2)}
+                          </span>
+                        )}
                       </td>
 
                       {/* Margin */}
@@ -660,9 +667,16 @@ export const ProductsPage: React.FC = () => {
                 {/* Pricing Block */}
                 <div className="border-t border-slate-100 pt-3 mt-auto">
                   <div className="flex items-baseline justify-between mb-1">
-                    <span className="text-base font-extrabold text-navy-900">
-                      Rs. {p.sellingPrice.toFixed(2)}
-                    </span>
+                    <div>
+                      <span className="text-base font-extrabold text-navy-900 block">
+                        Rs. {p.sellingPrice.toFixed(2)}
+                      </span>
+                      {p.wholesalePrice !== undefined && p.wholesalePrice > 0 && (
+                        <span className="text-[10px] text-sky-700 font-bold block" title="Wholesale B2B Price">
+                          WS: Rs. {p.wholesalePrice.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] text-slate-400">
                       Cost: Rs. {p.costPrice.toFixed(2)}
                     </span>

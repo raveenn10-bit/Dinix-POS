@@ -29,6 +29,7 @@ service cloud.firestore {
     //      - sku: string (1-50 chars) [Required]
     //      - costPrice: number (>= 0) [Required]
     //      - sellingPrice: number (>= 0) [Required]
+    //      - wholesalePrice: number (>= 0) [Optional]
     //      - stockQuantity: number (current inventory count) [Required]
     //      - minimumStock: number (>= 0, low-stock threshold) [Required]
     //      - id: string (0-100 chars) [Optional]
@@ -68,6 +69,7 @@ service cloud.firestore {
     //      - total: number (>= 0) [Required]
     //      - orderStatus: string enum: ['pending', 'processing', 'completed', 'delivered', 'cancelled', 'draft'] [Required]
     //      - paymentStatus: string enum: ['paid', 'unpaid', 'partially_paid', 'refunded'] [Required]
+    //      - orderType: string enum: ['retail', 'wholesale'] [Optional]
     //      - createdBy: string (matches auth.uid) [Required, Immutable]
     //      - id: string (0-100 chars) [Optional]
     //      - customerName: string (0-100 chars) [Optional]
@@ -322,12 +324,13 @@ service cloud.firestore {
     }
 
     function isValidProduct(data) {
-      return hasOnlyAllowedFields(['id', 'name', 'sku', 'barcode', 'category', 'description', 'costPrice', 'sellingPrice', 'stockQuantity', 'minimumStock', 'unit', 'active', 'imageUrl', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['id', 'name', 'sku', 'barcode', 'category', 'description', 'costPrice', 'sellingPrice', 'wholesalePrice', 'stockQuantity', 'minimumStock', 'unit', 'active', 'imageUrl', 'createdAt', 'updatedAt']) &&
         hasRequiredFields(['name', 'sku', 'costPrice', 'sellingPrice', 'stockQuantity', 'minimumStock']) &&
         validStringLength('name', 1, 150) &&
         validStringLength('sku', 1, 50) &&
         data.costPrice is number && data.costPrice >= 0 &&
         data.sellingPrice is number && data.sellingPrice >= 0 &&
+        isValidOptionalNumber('wholesalePrice', 0, 100000000) &&
         data.stockQuantity is number &&
         data.minimumStock is number && data.minimumStock >= 0 &&
         isValidOptionalString('id', 0, 100) &&
@@ -361,7 +364,7 @@ service cloud.firestore {
     }
 
     function isValidOrder(data) {
-      return hasOnlyAllowedFields(['id', 'orderNumber', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'deliveryFee', 'tax', 'total', 'paidAmount', 'balance', 'orderStatus', 'paymentStatus', 'paymentMethod', 'deliveryStatus', 'createdBy', 'deliveryId', 'invoiceId', 'notes', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['id', 'orderNumber', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'deliveryFee', 'tax', 'total', 'paidAmount', 'balance', 'orderStatus', 'paymentStatus', 'paymentMethod', 'deliveryStatus', 'orderType', 'createdBy', 'deliveryId', 'invoiceId', 'notes', 'createdAt', 'updatedAt']) &&
         hasRequiredFields(['orderNumber', 'items', 'subtotal', 'total', 'orderStatus', 'paymentStatus', 'createdBy']) &&
         validStringLength('orderNumber', 1, 50) &&
         isValidOptionalString('customerId', 0, 100) &&
@@ -382,6 +385,7 @@ service cloud.firestore {
         (!( 'balance' in data) || data.balance is number) &&
         isValidOptionalString('paymentMethod', 0, 50) &&
         isValidOptionalString('deliveryStatus', 0, 50) &&
+        isValidOptionalString('orderType', 0, 20) &&
         isValidOptionalString('deliveryId', 0, 100) &&
         isValidOptionalString('invoiceId', 0, 100) &&
         isValidOptionalString('notes', 0, 1000) &&

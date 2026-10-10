@@ -63,6 +63,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [description, setDescription] = useState(product?.description || '');
   const [costPrice, setCostPrice] = useState<number | ''>(product?.costPrice ?? '');
   const [sellingPrice, setSellingPrice] = useState<number | ''>(product?.sellingPrice ?? '');
+  const [wholesalePrice, setWholesalePrice] = useState<number | ''>(product?.wholesalePrice ?? '');
   const [stockQuantity, setStockQuantity] = useState<number | ''>(product?.stockQuantity ?? 10);
   const [minimumStock, setMinimumStock] = useState<number | ''>(product?.minimumStock ?? 5);
   const [active, setActive] = useState<boolean>(product ? product.active : true);
@@ -78,6 +79,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const numSelling = typeof sellingPrice === 'number' ? sellingPrice : 0;
   const profitAmount = numSelling - numCost;
   const profitMarginPercent = numSelling > 0 ? (profitAmount / numSelling) * 100 : 0;
+
+  const numWholesale = typeof wholesalePrice === 'number' ? wholesalePrice : 0;
+  const wholesaleProfitAmount = numWholesale > 0 ? numWholesale - numCost : 0;
+  const wholesaleProfitMarginPercent = numWholesale > 0 ? (wholesaleProfitAmount / numWholesale) * 100 : 0;
 
   // Auto-generate SKU helper based on selected category prefix
   const handleGenerateSku = () => {
@@ -158,6 +163,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       errs.sellingPriceWarning = 'Warning: Selling price is below cost price (Loss)';
     }
 
+    if (wholesalePrice !== '' && Number(wholesalePrice) < 0) {
+      errs.wholesalePrice = 'Wholesale price cannot be negative';
+    } else if (wholesalePrice !== '' && Number(costPrice) > Number(wholesalePrice)) {
+      errs.wholesalePriceWarning = 'Warning: Wholesale price is below cost price (Loss)';
+    }
+
     if (stockQuantity === '' || Number(stockQuantity) < 0) {
       errs.stockQuantity = 'Stock quantity cannot be negative';
     }
@@ -194,6 +205,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
         ...(cleanDescription ? { description: cleanDescription } : {}),
         costPrice: Number(costPrice),
         sellingPrice: Number(sellingPrice),
+        ...(wholesalePrice !== '' && !isNaN(Number(wholesalePrice)) && Number(wholesalePrice) >= 0
+          ? { wholesalePrice: Number(wholesalePrice) }
+          : {}),
         stockQuantity: Number(stockQuantity),
         minimumStock: Number(minimumStock),
         active,
@@ -370,23 +384,35 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
           {/* Row 4: Pricing & Margin Calculation Box */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
               <span className="text-xs font-bold text-navy-900 uppercase tracking-wider flex items-center gap-1.5">
                 <TrendingUp className="h-4 w-4 text-brand-500" />
                 Pricing & Profit Margin Calculator
               </span>
 
-              {numSelling > 0 && (
-                <span
-                  className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${marginBadge.bg}`}
-                >
-                  <Percent className="h-3 w-3" />
-                  {profitMarginPercent.toFixed(1)}% {marginBadge.label}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {numSelling > 0 && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${marginBadge.bg}`}
+                    title="Retail Margin"
+                  >
+                    <Percent className="h-3 w-3" />
+                    Retail: {profitMarginPercent.toFixed(1)}% {marginBadge.label}
+                  </span>
+                )}
+                {numWholesale > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-sky-50 border-sky-200 text-sky-800"
+                    title="Wholesale Margin"
+                  >
+                    <Percent className="h-3 w-3" />
+                    Wholesale: {wholesaleProfitMarginPercent.toFixed(1)}%
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-navy-900 mb-1">
                   Cost Price (Rs.) <span className="text-rose-500">*</span>
@@ -412,7 +438,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-navy-900 mb-1">
-                  Selling Price (Rs.) <span className="text-rose-500">*</span>
+                  Selling Price (Retail) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-xs font-bold text-brand-600">Rs.</span>
@@ -434,20 +460,64 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   <p className="mt-1 text-[11px] text-rose-600">{errors.sellingPrice}</p>
                 )}
               </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-navy-900">
+                    Wholesale Price (Rs.)
+                  </label>
+                  {(numSelling > 0 || numCost > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const suggested = numCost > 0
+                          ? Math.round(numCost * 1.2)
+                          : Math.round(numSelling * 0.85);
+                        setWholesalePrice(suggested);
+                      }}
+                      className="text-[10px] font-semibold text-sky-600 hover:text-sky-700 transition-colors"
+                      title="Auto-calculate wholesale price (+20% cost or -15% retail)"
+                    >
+                      ⚡ Auto
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-xs font-bold text-sky-600">Rs.</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={wholesalePrice}
+                    onChange={(e) => setWholesalePrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    placeholder="Optional (e.g. bulk B2B)"
+                    className={`w-full rounded-xl border pl-10 pr-3.5 py-2.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 ${
+                      errors.wholesalePrice
+                        ? 'border-rose-400 focus:ring-rose-400 bg-rose-50/20'
+                        : 'border-slate-200 focus:ring-brand-500'
+                    }`}
+                  />
+                </div>
+                {errors.wholesalePrice && (
+                  <p className="mt-1 text-[11px] text-rose-600">{errors.wholesalePrice}</p>
+                )}
+              </div>
             </div>
 
             {/* Profit Margin Summary line */}
-            <div className="flex items-center justify-between text-xs text-slate-600 bg-white p-3 rounded-xl border border-slate-200">
-              <div>
-                <span className="text-slate-500">Gross Profit per Unit: </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white p-3 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Retail Profit: </span>
                 <span className={`font-bold ${profitAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  Rs. {profitAmount.toFixed(2)}
+                  Rs. {profitAmount.toFixed(2)} ({profitMarginPercent.toFixed(1)}%)
                 </span>
               </div>
-              <div>
-                <span className="text-slate-500">Margin: </span>
-                <span className={`font-bold ${profitAmount >= 0 ? 'text-navy-900' : 'text-rose-600'}`}>
-                  {numSelling > 0 ? `${profitMarginPercent.toFixed(1)}%` : '0%'}
+              <div className="flex items-center justify-between sm:border-l sm:border-slate-200 sm:pl-3">
+                <span className="text-slate-500">Wholesale Profit: </span>
+                <span className={`font-bold ${numWholesale > 0 ? (wholesaleProfitAmount >= 0 ? 'text-sky-700' : 'text-rose-600') : 'text-slate-400'}`}>
+                  {numWholesale > 0
+                    ? `Rs. ${wholesaleProfitAmount.toFixed(2)} (${wholesaleProfitMarginPercent.toFixed(1)}%)`
+                    : 'Not configured'}
                 </span>
               </div>
             </div>
@@ -456,6 +526,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               <div className="flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 <span>{errors.sellingPriceWarning}</span>
+              </div>
+            )}
+            {errors.wholesalePriceWarning && (
+              <div className="flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>{errors.wholesalePriceWarning}</span>
               </div>
             )}
           </div>

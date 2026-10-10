@@ -849,6 +849,51 @@ export function useOrders() {
     });
     invalidateDataCache('orders');
 
+    // Auto-generate corresponding Invoice document for every new order so Invoices page is never empty
+    if (isNew) {
+      try {
+        const invId = `inv-${now}-${Math.random().toString(36).substring(2, 6)}`;
+        const invNumber = await generateNextInvoiceNumber('INV');
+        const autoInvoice: Invoice = {
+          id: invId,
+          invoiceNumber: invNumber,
+          orderId: id,
+          orderNumber: saved.orderNumber,
+          ...(saved.customerId ? { customerId: saved.customerId } : {}),
+          customerSnapshot: {
+            name: saved.customerName,
+            phone: saved.customerPhone,
+            address: saved.customerAddress || '',
+          },
+          items: saved.items,
+          subtotal: saved.subtotal,
+          discount: saved.discount || 0,
+          deliveryFee: saved.deliveryFee || 0,
+          total: saved.total,
+          paidAmount: saved.paymentStatus === 'paid' ? saved.total : 0,
+          paymentStatus: saved.paymentStatus,
+          paymentMethod: saved.paymentMethod || 'cash',
+          invoiceType: (saved as any).orderType === 'wholesale' ? 'wholesale' : 'retail',
+          createdBy: user.name,
+          createdAt: now,
+        };
+
+        // 1. Optimistic local persistence & in-memory update
+        invoicesStore.updateMemory((curr) => [autoInvoice, ...curr.filter((inv) => inv.id !== invId)]);
+
+        // 2. Cloud Firestore sync
+        if (isFirebaseConfigured) {
+          try {
+            await setDoc(doc(db, 'invoices', invId), sanitizeForFirestore(autoInvoice));
+          } catch (invErr) {
+            console.warn('[Firestore Sync] Auto-invoice write deferred to local storage:', invErr);
+          }
+        }
+      } catch (autoInvErr) {
+        console.warn('Failed to auto-generate invoice for new order:', autoInvErr);
+      }
+    }
+
     // Update customer stats locally
     if (saved.customerId) {
       const storedCustomers: Customer[] = JSON.parse(
@@ -1125,10 +1170,7 @@ export function useInvoices() {
   }, []);
 
   useEffect(() => {
-    if (!isFirebaseConfigured) {
-      fetchInvoices();
-      return;
-    }
+    fetchInvoices();
 
     const unsub = invoicesStore.subscribe((items) => {
       setInvoices(items);
@@ -1138,58 +1180,15 @@ export function useInvoices() {
     return () => unsub();
   }, [fetchInvoices]);
 
-  const saveInvoice = async (
+  const hookSaveInvoice = async (
     invoiceData: Omit<Invoice, 'id' | 'createdAt'> & { id?: string },
     user: { uid: string; name: string }
   ): Promise<Invoice> => {
-    const isNew = !invoiceData.id;
-    const now = Date.now();
-    const id = invoiceData.id || `inv-${now}-${Math.random().toString(36).substring(2, 6)}`;
-    const invoiceNumber = invoiceData.invoiceNumber || (await generateNextInvoiceNumber('INV'));
-
-    const saved: Invoice = {
-      ...invoiceData,
-      id,
-      invoiceNumber,
-      createdAt: (invoiceData as Partial<Invoice>).createdAt || now,
-    };
-
-    // 1. Optimistic local persistence & memory update
-    const current = [...invoices];
-    const index = current.findIndex((inv) => inv.id === id);
-    const updated = index !== -1 ? current.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...current];
-    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
-    setInvoices(updated);
-    invoicesStore.updateMemory((curr) => {
-      const idx = curr.findIndex((inv) => inv.id === id);
-      return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
+    const saved = await saveInvoice(invoiceData, user);
+    setInvoices((curr) => {
+      const idx = curr.findIndex((inv) => inv.id === saved.id);
+      return idx !== -1 ? curr.map((inv) => (inv.id === saved.id ? saved : inv)) : [saved, ...curr];
     });
-    invalidateDataCache('orders');
-
-    // 2. Cloud Firestore sync
-    if (isFirebaseConfigured) {
-      try {
-        await setDoc(doc(db, 'invoices', id), sanitizeForFirestore(saved));
-        await logActivity(
-          isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
-          'invoice',
-          id,
-          `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
-          user
-        );
-      } catch (fbErr) {
-        console.warn('[Firestore Sync] Invoice write deferred to local storage:', fbErr);
-      }
-    } else {
-      logActivity(
-        isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
-        'invoice',
-        id,
-        `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
-        user
-      );
-    }
-
     return saved;
   };
 
@@ -1286,38 +1285,9 @@ export function useInvoices() {
     return updatedInvoice;
   };
 
-  const deleteInvoice = async (id: string, user: { uid: string; name: string }): Promise<void> => {
-    const target = invoices.find((inv) => inv.id === id);
-    // 1. Optimistic local update
-    const updated = invoices.filter((inv) => inv.id !== id);
-    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
-    setInvoices(updated);
-    invoicesStore.updateMemory((curr) => curr.filter((inv) => inv.id !== id));
-    invalidateDataCache('orders');
-
-    // 2. Cloud Firestore sync
-    if (isFirebaseConfigured) {
-      try {
-        await deleteDoc(doc(db, 'invoices', id));
-        await logActivity(
-          'DELETE_INVOICE',
-          'invoice',
-          id,
-          `Deleted invoice #${target?.invoiceNumber || id}`,
-          user
-        );
-      } catch (fbErr) {
-        console.warn('[Firestore Sync] Invoice deletion deferred to local storage:', fbErr);
-      }
-    } else {
-      logActivity(
-        'DELETE_INVOICE',
-        'invoice',
-        id,
-        `Deleted invoice #${target?.invoiceNumber || id}`,
-        user
-      );
-    }
+  const hookDeleteInvoice = async (id: string, user: { uid: string; name: string }): Promise<void> => {
+    await deleteInvoice(id, user);
+    setInvoices((curr) => curr.filter((inv) => inv.id !== id));
   };
 
   return {
@@ -1325,10 +1295,103 @@ export function useInvoices() {
     loading,
     error,
     refresh: fetchInvoices,
-    saveInvoice,
+    saveInvoice: hookSaveInvoice,
     recordPayment,
-    deleteInvoice,
+    deleteInvoice: hookDeleteInvoice,
   };
+}
+
+/**
+ * Standalone module-level export for saving invoices with full optimistic update & Firestore sync
+ */
+export async function saveInvoice(
+  invoiceData: Omit<Invoice, 'id' | 'createdAt'> & { id?: string },
+  user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+): Promise<Invoice> {
+  const isNew = !invoiceData.id;
+  const now = Date.now();
+  const id = invoiceData.id || `inv-${now}-${Math.random().toString(36).substring(2, 6)}`;
+  const invoiceNumber = invoiceData.invoiceNumber || (await generateNextInvoiceNumber('INV'));
+
+  const saved: Invoice = {
+    ...invoiceData,
+    id,
+    invoiceNumber,
+    createdAt: (invoiceData as Partial<Invoice>).createdAt || now,
+  };
+
+  // 1. Optimistic local persistence & memory update
+  invoicesStore.updateMemory((curr) => {
+    const idx = curr.findIndex((inv) => inv.id === id);
+    return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
+  });
+  invalidateDataCache('orders');
+
+  // 2. Cloud Firestore sync
+  if (isFirebaseConfigured) {
+    try {
+      await setDoc(doc(db, 'invoices', id), sanitizeForFirestore(saved));
+      await logActivity(
+        isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
+        'invoice',
+        id,
+        `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
+        user
+      );
+    } catch (fbErr) {
+      console.warn('[Firestore Sync] Invoice write deferred to local storage:', fbErr);
+    }
+  } else {
+    logActivity(
+      isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
+      'invoice',
+      id,
+      `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
+      user
+    );
+  }
+
+  return saved;
+}
+
+/**
+ * Standalone module-level export for deleting invoices with full optimistic update & Firestore sync
+ */
+export async function deleteInvoice(
+  id: string,
+  user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+): Promise<void> {
+  let targetInvoiceNumber = id;
+  invoicesStore.updateMemory((curr) => {
+    const target = curr.find((inv) => inv.id === id);
+    if (target) targetInvoiceNumber = target.invoiceNumber;
+    return curr.filter((inv) => inv.id !== id);
+  });
+  invalidateDataCache('orders');
+
+  // 2. Cloud Firestore sync
+  if (isFirebaseConfigured) {
+    try {
+      await deleteDoc(doc(db, 'invoices', id));
+      await logActivity(
+        'DELETE_INVOICE',
+        'invoice',
+        id,
+        `Deleted invoice #${targetInvoiceNumber}`,
+        user
+      );
+    } catch (fbErr) {
+      console.warn('[Firestore Sync] Invoice deletion deferred to local storage:', fbErr);
+    }
+  } else {
+    logActivity(
+      'DELETE_INVOICE',
+      'invoice',
+      id,
+      `Deleted invoice #${targetInvoiceNumber}`,
+      user
+    );
+  }
 }
 
 // ----------------------------------------------------

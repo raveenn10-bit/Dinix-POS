@@ -23,6 +23,7 @@ export interface Product {
   description?: string;
   costPrice: number;
   sellingPrice: number;
+  wholesalePrice?: number;
   stockQuantity: number;
   minimumStock: number;
   active: boolean;
@@ -93,6 +94,7 @@ export interface Order {
   paymentStatus: PaymentStatus;
   orderStatus: OrderStatus;
   deliveryStatus: DeliveryStatus;
+  orderType?: 'retail' | 'wholesale';
   notes?: string;
   createdBy: string;
   createdAt: string | number;

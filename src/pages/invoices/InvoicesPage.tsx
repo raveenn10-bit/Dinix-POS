@@ -17,15 +17,19 @@ import {
   ChevronDown,
   X,
   ExternalLink,
+  Edit2,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useInvoices } from '@/lib/dataStore';
 import { Invoice, PaymentStatus, PaymentMethod } from '@/types';
 import { InvoiceViewModal } from './InvoiceViewModal';
+import { InvoiceFormModal } from './InvoiceFormModal';
 import { useNotification } from '@/context/NotificationContext';
 import { useAuth } from '@/context/AuthContext';
 
 export const InvoicesPage: React.FC = () => {
-  const { invoices, loading, recordPayment, saveInvoice } = useInvoices();
+  const { invoices, loading, recordPayment, saveInvoice, deleteInvoice } = useInvoices();
   const { userProfile } = useAuth();
   const { notifySuccess, notifyError } = useNotification();
 
@@ -44,6 +48,14 @@ export const InvoicesPage: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentNotes, setPaymentNotes] = useState<string>('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState<boolean>(false);
+
+  // Invoice Form Modal state (Create / Edit)
+  const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+
+  // Delete Confirmation Dialog state
+  const [deleteConfirmInvoice, setDeleteConfirmInvoice] = useState<Invoice | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   // Quick stats calculations
   const stats = useMemo(() => {
@@ -163,6 +175,53 @@ export const InvoicesPage: React.FC = () => {
     }
   };
 
+  const handleOpenCreateModal = () => {
+    setEditingInvoice(null);
+    setIsFormModalOpen(true);
+  };
+
+  const handleOpenEditModal = (inv: Invoice) => {
+    setEditingInvoice(inv);
+    setIsFormModalOpen(true);
+  };
+
+  const handleSaveInvoiceForm = async (
+    invoiceData: Omit<Invoice, 'id' | 'createdAt'> & { id?: string; createdAt?: string | number }
+  ) => {
+    try {
+      const saved = await saveInvoice(invoiceData, {
+        uid: userProfile?.uid || 'user',
+        name: userProfile?.name || 'Danix User',
+      });
+      notifySuccess(
+        `Invoice #${saved.invoiceNumber} ${invoiceData.id ? 'updated' : 'created'} successfully!`
+      );
+      setIsFormModalOpen(false);
+      setEditingInvoice(null);
+    } catch (err) {
+      console.error('Failed to save invoice:', err);
+      notifyError((err as Error).message || 'Failed to save invoice');
+    }
+  };
+
+  const handleConfirmDeleteInvoice = async () => {
+    if (!deleteConfirmInvoice) return;
+    try {
+      setIsDeleting(true);
+      await deleteInvoice(deleteConfirmInvoice.id, {
+        uid: userProfile?.uid || 'user',
+        name: userProfile?.name || 'Danix User',
+      });
+      notifySuccess(`Invoice #${deleteConfirmInvoice.invoiceNumber} deleted successfully.`);
+      setDeleteConfirmInvoice(null);
+    } catch (err) {
+      console.error('Failed to delete invoice:', err);
+      notifyError((err as Error).message || 'Failed to delete invoice');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const getStatusBadge = (status: PaymentStatus) => {
     switch (status) {
       case 'paid':
@@ -211,8 +270,16 @@ export const InvoicesPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Header summary or quick export */}
+        {/* Header summary & action buttons */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-brand-500/25 hover:bg-brand-600 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>+ Create Invoice</span>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -546,6 +613,26 @@ export const InvoicesPage: React.FC = () => {
                             </button>
                           )}
 
+                          {/* Edit Invoice Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(inv)}
+                            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-navy-900 transition-colors"
+                            title="Edit Invoice"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+
+                          {/* Delete Invoice Button */}
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmInvoice(inv)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                            title="Delete Invoice"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+
                           {/* View & Print Button */}
                           <button
                             type="button"
@@ -727,6 +814,58 @@ export const InvoicesPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Form Modal (Create & Edit) */}
+      {isFormModalOpen && (
+        <InvoiceFormModal
+          invoice={editingInvoice}
+          isOpen={isFormModalOpen}
+          onClose={() => {
+            setIsFormModalOpen(false);
+            setEditingInvoice(null);
+          }}
+          onSave={handleSaveInvoiceForm}
+        />
+      )}
+
+      {/* Delete Invoice Confirmation Dialog */}
+      {deleteConfirmInvoice && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/75 p-4 backdrop-blur-sm animate-in fade-in"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-center animate-in zoom-in-95 duration-150">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 mb-3 shadow-inner">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <h3 className="text-base font-bold text-navy-900">Confirm Delete Invoice</h3>
+            <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+              Are you sure you want to delete invoice <strong className="text-navy-900">#{deleteConfirmInvoice.invoiceNumber}</strong> for {deleteConfirmInvoice.customerSnapshot?.name} (Rs. {deleteConfirmInvoice.total.toLocaleString()})?
+              This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmInvoice(null)}
+                disabled={isDeleting}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteInvoice}
+                disabled={isDeleting}
+                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-md shadow-rose-600/25 disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

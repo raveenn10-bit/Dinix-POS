@@ -47,14 +47,28 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
       return;
     }
 
-    const printWindow = window.open('', '_blank', 'width=900,height=1100');
-    if (!printWindow) {
-      // Popup blocked fallback: direct window.print()
+    let iframe = document.getElementById('danix-invoice-view-print-iframe') as HTMLIFrameElement | null;
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'danix-invoice-view-print-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
+    }
+
+    const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (!iframeDoc) {
       window.print();
       return;
     }
 
-    printWindow.document.write(`
+    iframeDoc.open();
+    iframeDoc.write(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -105,19 +119,20 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
           <div style="max-width: 210mm; margin: 0 auto;">
             ${printContent.innerHTML}
           </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.focus();
-                window.print();
-                window.close();
-              }, 400);
-            };
-          </script>
         </body>
       </html>
     `);
-    printWindow.document.close();
+    iframeDoc.close();
+
+    setTimeout(() => {
+      try {
+        iframe?.contentWindow?.focus();
+        iframe?.contentWindow?.print();
+      } catch (err) {
+        console.error('Iframe print error, falling back to window.print():', err);
+        window.print();
+      }
+    }, 400);
   };
 
   // Download CSV Line items

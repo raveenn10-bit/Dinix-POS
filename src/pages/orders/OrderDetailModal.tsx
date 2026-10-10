@@ -24,6 +24,7 @@ import { Order, OrderStatus, PaymentStatus } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
 import { generateNextInvoiceNumber } from '@/lib/firebase/firestore';
+import { printOrderReceipt } from '@/lib/printUtils';
 
 interface OrderDetailModalProps {
   order: Order;
@@ -90,129 +91,16 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   };
 
   const handlePrintSlip = () => {
-    const printWindow = window.open('', '_blank', 'width=700,height=800');
-    if (!printWindow) {
-      notifyError('Popup blocked! Please allow popups to print order invoice.');
-      return;
-    }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Order Receipt - ${order.orderNumber}</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              padding: 24px;
-              color: #0b2545;
-              max-width: 600px;
-              margin: 0 auto;
-            }
-            .header { text-align: center; border-bottom: 2px dashed #ccc; padding-bottom: 16px; margin-bottom: 16px; }
-            .brand { font-size: 20px; font-weight: 800; color: #f36f21; }
-            .sub { font-size: 11px; color: #666; }
-            .info-grid { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 16px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
-            th { text-align: left; border-bottom: 1px solid #0b2545; padding: 6px 4px; }
-            td { padding: 6px 4px; border-bottom: 1px solid #eee; }
-            .text-right { text-align: right; }
-            .totals { width: 100%; font-size: 12px; margin-top: 8px; }
-            .totals td { padding: 3px 0; border: none; }
-            .grand-total { font-size: 15px; font-weight: 800; border-top: 2px solid #0b2545 !important; padding-top: 6px !important; }
-            .footer { text-align: center; font-size: 11px; color: #888; margin-top: 24px; border-top: 1px dashed #ccc; padding-top: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="brand">DANIX ONLINE SHOPPING & POS</div>
-            <div class="sub">Trusted Online Shopping Management System • Sri Lanka</div>
-            <div class="sub">Hotline: +94 77 123 4567 | info@danix.lk</div>
-          </div>
-
-          <div class="info-grid">
-            <div>
-              <strong>ORDER #:</strong> ${order.orderNumber}<br>
-              <strong>Date:</strong> ${new Date(order.createdAt).toLocaleString('en-LK')}<br>
-              <strong>Status:</strong> ${order.orderStatus.toUpperCase()}<br>
-              <strong>Payment:</strong> ${order.paymentStatus.toUpperCase()} (${order.paymentMethod})
-            </div>
-            <div style="text-align: right;">
-              <strong>CUSTOMER:</strong><br>
-              ${order.customerName}<br>
-              ${order.customerPhone}<br>
-              ${order.customerAddress || 'Colombo, Sri Lanka'}
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>SKU</th>
-                <th class="text-right">Qty</th>
-                <th class="text-right">Price</th>
-                <th class="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${order.items
-                .map(
-                  (item) => `
-                <tr>
-                  <td>${item.productName}</td>
-                  <td>${item.sku}</td>
-                  <td class="text-right">${item.quantity}</td>
-                  <td class="text-right">Rs. ${item.unitPrice.toFixed(2)}</td>
-                  <td class="text-right">Rs. ${item.lineTotal.toFixed(2)}</td>
-                </tr>
-              `
-                )
-                .join('')}
-            </tbody>
-          </table>
-
-          <table class="totals">
-            <tr>
-              <td class="text-right">Subtotal:</td>
-              <td class="text-right" style="width: 120px;">Rs. ${order.subtotal.toFixed(2)}</td>
-            </tr>
-            ${
-              order.discount > 0
-                ? `<tr><td class="text-right">Discount:</td><td class="text-right">- Rs. ${order.discount.toFixed(2)}</td></tr>`
-                : ''
-            }
-            <tr>
-              <td class="text-right">Delivery Fee:</td>
-              <td class="text-right">Rs. ${order.deliveryFee.toFixed(2)}</td>
-            </tr>
-            <tr class="grand-total">
-              <td class="text-right"><strong>GRAND TOTAL:</strong></td>
-              <td class="text-right"><strong>Rs. ${order.total.toFixed(2)}</strong></td>
-            </tr>
-          </table>
-
-          ${
-            order.notes
-              ? `<p style="font-size: 11px; margin-top: 12px; background: #f9f9f9; padding: 8px;"><strong>Delivery Notes:</strong> ${order.notes}</p>`
-              : ''
-          }
-
-          <div class="footer">
-            Thank you for shopping with DANIX! Questions? Call +94 77 123 4567<br>
-            Goods once sold can be returned within 7 days in original condition.
-          </div>
-
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printOrderReceipt(order, {
+      title: `Order Receipt - ${order.orderNumber}`,
+      onComplete: () => {
+        notifySuccess(`Order #${order.orderNumber} receipt sent to printer`);
+      },
+      onError: (err) => {
+        console.error('Print receipt slip error:', err);
+        notifyError('Failed to trigger printer for receipt slip.');
+      },
+    });
   };
 
   const getStatusStepIndex = (status: OrderStatus): number => {
@@ -243,6 +131,15 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                   }`}
                 >
                   {order.orderStatus}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    order.orderType === 'wholesale'
+                      ? 'bg-sky-500 text-white'
+                      : 'bg-slate-700 text-slate-200'
+                  }`}
+                >
+                  {order.orderType === 'wholesale' ? '📦 Wholesale' : '🛍️ Retail'}
                 </span>
               </div>
               <p className="text-xs text-slate-300">
