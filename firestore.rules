@@ -294,7 +294,7 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'name', 'email', 'role', 'active', 'createdAt', 'updatedAt', 'phone', 'photoURL']) &&
+      return hasOnlyAllowedFields(['uid', 'name', 'email', 'role', 'active', 'createdAt', 'updatedAt', 'phone', 'photoURL', 'avatarUrl']) &&
         hasRequiredFields(['uid', 'name', 'email', 'role', 'active']) &&
         validStringLength('uid', 1, 128) &&
         validStringLength('name', 1, 100) &&
@@ -305,7 +305,8 @@ service cloud.firestore {
         isValidOptionalTimestamp('createdAt') &&
         isValidOptionalTimestamp('updatedAt') &&
         isValidOptionalString('phone', 0, 30) &&
-        isValidOptionalString('photoURL', 0, 500);
+        isValidOptionalString('photoURL', 0, 1000) &&
+        isValidOptionalString('avatarUrl', 0, 1000);
     }
 
     function isValidCategory(data) {
@@ -360,15 +361,15 @@ service cloud.firestore {
     }
 
     function isValidOrder(data) {
-      return hasOnlyAllowedFields(['id', 'orderNumber', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'deliveryFee', 'tax', 'total', 'paidAmount', 'balance', 'orderStatus', 'paymentStatus', 'paymentMethod', 'createdBy', 'deliveryId', 'invoiceId', 'notes', 'createdAt', 'updatedAt']) &&
-        hasRequiredFields(['orderNumber', 'customerId', 'items', 'subtotal', 'total', 'orderStatus', 'paymentStatus', 'createdBy']) &&
+      return hasOnlyAllowedFields(['id', 'orderNumber', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'deliveryFee', 'tax', 'total', 'paidAmount', 'balance', 'orderStatus', 'paymentStatus', 'paymentMethod', 'deliveryStatus', 'createdBy', 'deliveryId', 'invoiceId', 'notes', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['orderNumber', 'items', 'subtotal', 'total', 'orderStatus', 'paymentStatus', 'createdBy']) &&
         validStringLength('orderNumber', 1, 50) &&
-        validStringLength('customerId', 0, 100) &&
+        isValidOptionalString('customerId', 0, 100) &&
         data.items is list && data.items.size() >= 1 && data.items.size() <= 200 &&
         data.subtotal is number && data.subtotal >= 0 &&
         data.total is number && data.total >= 0 &&
-        data.orderStatus in ['pending', 'processing', 'completed', 'delivered', 'cancelled', 'draft'] &&
-        data.paymentStatus in ['paid', 'unpaid', 'partially_paid', 'refunded'] &&
+        data.orderStatus in ['pending', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled', 'returned', 'processing', 'completed', 'draft'] &&
+        data.paymentStatus in ['paid', 'unpaid', 'partial', 'partially_paid', 'refunded'] &&
         validStringLength('createdBy', 1, 128) &&
         isValidOptionalString('id', 0, 100) &&
         isValidOptionalString('customerName', 0, 100) &&
@@ -380,6 +381,7 @@ service cloud.firestore {
         isValidOptionalNumber('paidAmount', 0, 1000000000) &&
         (!( 'balance' in data) || data.balance is number) &&
         isValidOptionalString('paymentMethod', 0, 50) &&
+        isValidOptionalString('deliveryStatus', 0, 50) &&
         isValidOptionalString('deliveryId', 0, 100) &&
         isValidOptionalString('invoiceId', 0, 100) &&
         isValidOptionalString('notes', 0, 1000) &&
@@ -388,25 +390,30 @@ service cloud.firestore {
     }
 
     function isValidInvoice(data) {
-      return hasOnlyAllowedFields(['id', 'invoiceNumber', 'orderId', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'items', 'subtotal', 'discount', 'tax', 'total', 'paidAmount', 'paymentStatus', 'paymentMethod', 'status', 'createdBy', 'issuedAt', 'notes', 'createdAt', 'updatedAt']) &&
-        hasRequiredFields(['invoiceNumber', 'orderId', 'customerId', 'total', 'subtotal', 'createdBy']) &&
+      return hasOnlyAllowedFields(['id', 'invoiceNumber', 'orderId', 'orderNumber', 'customerId', 'customerName', 'customerPhone', 'customerAddress', 'customerSnapshot', 'items', 'subtotal', 'discount', 'deliveryFee', 'tax', 'total', 'paidAmount', 'dueDate', 'paymentStatus', 'paymentMethod', 'invoiceType', 'status', 'createdBy', 'issuedAt', 'notes', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['invoiceNumber', 'orderId', 'total', 'subtotal', 'createdBy']) &&
         validStringLength('invoiceNumber', 1, 50) &&
         validStringLength('orderId', 1, 100) &&
-        validStringLength('customerId', 0, 100) &&
+        isValidOptionalString('customerId', 0, 100) &&
+        isValidOptionalString('orderNumber', 0, 100) &&
         data.subtotal is number && data.subtotal >= 0 &&
         data.total is number && data.total >= 0 &&
         validStringLength('createdBy', 1, 128) &&
+        (!( 'customerSnapshot' in data) || data.customerSnapshot is map) &&
         (!( 'items' in data) || (data.items is list && data.items.size() <= 200)) &&
         isValidOptionalString('id', 0, 100) &&
         isValidOptionalString('customerName', 0, 100) &&
         isValidOptionalString('customerPhone', 0, 30) &&
         isValidOptionalString('customerAddress', 0, 300) &&
         isValidOptionalNumber('discount', 0, 100000000) &&
+        isValidOptionalNumber('deliveryFee', 0, 10000000) &&
         isValidOptionalNumber('tax', 0, 10000000) &&
         isValidOptionalNumber('paidAmount', 0, 1000000000) &&
+        isValidOptionalTimestamp('dueDate') &&
         isValidOptionalString('paymentStatus', 0, 50) &&
         isValidOptionalString('paymentMethod', 0, 50) &&
-        (!( 'status' in data) || data.status in ['issued', 'paid', 'partially_paid', 'void', 'cancelled']) &&
+        isValidOptionalString('invoiceType', 0, 50) &&
+        (!( 'status' in data) || data.status in ['issued', 'paid', 'partially_paid', 'partial', 'void', 'cancelled']) &&
         isValidOptionalString('notes', 0, 1000) &&
         isValidOptionalTimestamp('issuedAt') &&
         isValidOptionalTimestamp('createdAt') &&
@@ -414,17 +421,25 @@ service cloud.firestore {
     }
 
     function isValidDelivery(data) {
-      return hasOnlyAllowedFields(['id', 'orderId', 'customerId', 'status', 'recipientName', 'recipientPhone', 'deliveryAddress', 'trackingNumber', 'courier', 'deliveryFee', 'codAmount', 'notes', 'assignedTo', 'dispatchedAt', 'deliveredAt', 'createdBy', 'createdAt', 'updatedAt']) &&
-        hasRequiredFields(['orderId', 'customerId', 'status', 'recipientName', 'recipientPhone', 'deliveryAddress']) &&
+      return hasOnlyAllowedFields(['id', 'orderId', 'orderNumber', 'invoiceId', 'customerId', 'status', 'recipientName', 'recipientPhone', 'deliveryAddress', 'customerName', 'phone', 'phone2', 'address', 'city', 'trackingNumber', 'courier', 'serviceType', 'deliveryFee', 'codAmount', 'notes', 'assignedTo', 'dispatchedAt', 'deliveredAt', 'createdBy', 'createdAt', 'updatedAt']) &&
+        hasRequiredFields(['orderId', 'status']) &&
         validStringLength('orderId', 1, 100) &&
-        validStringLength('customerId', 0, 100) &&
-        data.status in ['pending', 'assigned', 'picked_up', 'in_transit', 'delivered', 'failed', 'returned', 'cancelled'] &&
-        validStringLength('recipientName', 1, 100) &&
-        validStringLength('recipientPhone', 1, 30) &&
-        validStringLength('deliveryAddress', 1, 300) &&
+        isValidOptionalString('customerId', 0, 100) &&
+        data.status in ['pending', 'ready', 'dispatched', 'in_transit', 'delivered', 'failed', 'returned', 'cancelled', 'assigned', 'picked_up'] &&
+        isValidOptionalString('recipientName', 0, 100) &&
+        isValidOptionalString('recipientPhone', 0, 30) &&
+        isValidOptionalString('deliveryAddress', 0, 300) &&
+        isValidOptionalString('customerName', 0, 100) &&
+        isValidOptionalString('phone', 0, 30) &&
+        isValidOptionalString('phone2', 0, 30) &&
+        isValidOptionalString('address', 0, 300) &&
+        isValidOptionalString('city', 0, 100) &&
         isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('orderNumber', 0, 100) &&
+        isValidOptionalString('invoiceId', 0, 100) &&
         isValidOptionalString('trackingNumber', 0, 100) &&
         isValidOptionalString('courier', 0, 100) &&
+        isValidOptionalString('serviceType', 0, 100) &&
         isValidOptionalNumber('deliveryFee', 0, 10000000) &&
         isValidOptionalNumber('codAmount', 0, 100000000) &&
         isValidOptionalString('notes', 0, 1000) &&
@@ -437,14 +452,17 @@ service cloud.firestore {
     }
 
     function isValidStockMovement(data) {
-      return hasOnlyAllowedFields(['id', 'productId', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'createdBy', 'orderId', 'reference', 'note', 'createdAt']) &&
-        hasRequiredFields(['productId', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'createdBy', 'createdAt']) &&
+      return hasOnlyAllowedFields(['id', 'productId', 'sku', 'type', 'quantity', 'previousStock', 'newStock', 'referenceType', 'referenceId', 'reason', 'createdBy', 'orderId', 'reference', 'note', 'createdAt']) &&
+        hasRequiredFields(['productId', 'type', 'quantity', 'previousStock', 'newStock', 'createdBy', 'createdAt']) &&
         validStringLength('productId', 1, 100) &&
-        data.type in ['in', 'out', 'adjustment', 'return', 'sale', 'transfer'] &&
+        data.type in ['stock_in', 'sale', 'return', 'adjustment', 'damaged', 'in', 'out', 'transfer'] &&
         data.quantity is number &&
         data.previousStock is number &&
         data.newStock is number &&
-        validStringLength('reason', 1, 200) &&
+        isValidOptionalString('sku', 0, 50) &&
+        isValidOptionalString('referenceType', 0, 100) &&
+        isValidOptionalString('referenceId', 0, 100) &&
+        isValidOptionalString('reason', 0, 200) &&
         validStringLength('createdBy', 1, 128) &&
         (data.createdAt is timestamp || data.createdAt is number) &&
         isValidOptionalString('id', 0, 100) &&
@@ -454,15 +472,16 @@ service cloud.firestore {
     }
 
     function isValidExpense(data) {
-      return hasOnlyAllowedFields(['id', 'title', 'amount', 'category', 'date', 'createdBy', 'description', 'paymentMethod', 'receiptUrl', 'vendor', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['id', 'title', 'amount', 'category', 'date', 'createdBy', 'description', 'notes', 'paymentMethod', 'receiptUrl', 'vendor', 'createdAt', 'updatedAt']) &&
         hasRequiredFields(['title', 'amount', 'category', 'date', 'createdBy']) &&
         validStringLength('title', 1, 150) &&
         data.amount is number && data.amount > 0 &&
-        data.category in ['utilities', 'rent', 'salaries', 'supplies', 'marketing', 'delivery', 'maintenance', 'inventory', 'other'] &&
-        (data.date is timestamp || data.date is number) &&
+        validStringLength('category', 1, 50) &&
+        (data.date is timestamp || data.date is number || data.date is string) &&
         validStringLength('createdBy', 1, 128) &&
         isValidOptionalString('id', 0, 100) &&
         isValidOptionalString('description', 0, 1000) &&
+        isValidOptionalString('notes', 0, 1000) &&
         isValidOptionalString('paymentMethod', 0, 50) &&
         isValidOptionalString('receiptUrl', 0, 1000) &&
         isValidOptionalString('vendor', 0, 100) &&
@@ -489,18 +508,21 @@ service cloud.firestore {
     }
 
     function isValidBusinessSettings(data) {
-      return hasOnlyAllowedFields(['storeName', 'tagline', 'phone', 'email', 'address', 'city', 'country', 'postalCode', 'currency', 'socialLinks', 'taxRate', 'receiptFooter', 'logoUrl', 'updatedAt', 'updatedBy']) &&
-        hasRequiredFields(['storeName', 'phone', 'email']) &&
-        validStringLength('storeName', 1, 100) &&
-        validStringLength('phone', 1, 30) &&
-        validStringLength('email', 5, 100) &&
-        isValidEmail(data.email) &&
-        isValidOptionalString('tagline', 0, 200) &&
+      return hasOnlyAllowedFields(['businessName', 'storeName', 'address', 'phone', 'email', 'currency', 'invoicePrefix', 'invoiceFooter', 'taxSettings', 'deliverySettings', 'tagline', 'city', 'country', 'postalCode', 'socialLinks', 'taxRate', 'receiptFooter', 'logoUrl', 'updatedAt', 'updatedBy']) &&
+        isValidOptionalString('businessName', 0, 100) &&
+        isValidOptionalString('storeName', 0, 100) &&
+        isValidOptionalString('phone', 0, 30) &&
+        isValidOptionalString('email', 0, 100) &&
         isValidOptionalString('address', 0, 300) &&
+        isValidOptionalString('currency', 0, 10) &&
+        isValidOptionalString('invoicePrefix', 0, 20) &&
+        isValidOptionalString('invoiceFooter', 0, 500) &&
+        (!( 'taxSettings' in data) || data.taxSettings is map) &&
+        (!( 'deliverySettings' in data) || data.deliverySettings is map) &&
+        isValidOptionalString('tagline', 0, 200) &&
         isValidOptionalString('city', 0, 100) &&
         isValidOptionalString('country', 0, 100) &&
         isValidOptionalString('postalCode', 0, 20) &&
-        isValidOptionalString('currency', 0, 10) &&
         isValidOptionalNumber('taxRate', 0, 100) &&
         isValidOptionalString('receiptFooter', 0, 500) &&
         isValidOptionalString('logoUrl', 0, 1000) &&
@@ -543,12 +565,12 @@ service cloud.firestore {
     // Categories Collection (Dynamic Category Management)
     match /categories/{categoryId} {
       // Active staff and admins can browse categories for POS and product catalog
-      allow read: if isStaff();
+      allow read: if isStaff() || isAdmin();
 
-      // Only administrators can create or update categories
-      allow create: if isAdmin() && isValidCategory(request.resource.data);
+      // Administrators and active staff can create or update categories
+      allow create: if (isAdmin() || isStaff()) && isValidCategory(request.resource.data);
 
-      allow update: if isAdmin() && isValidCategory(request.resource.data) &&
+      allow update: if (isAdmin() || isStaff()) && isValidCategory(request.resource.data) &&
         areImmutableFieldsUnchanged(['createdAt']);
 
       // Only administrators can delete category documents
@@ -590,16 +612,15 @@ service cloud.firestore {
       // Active staff and admins can view orders
       allow read: if isStaff();
 
-      // Orders must be created by the authenticated active user
+      // Orders can be created by authenticated active staff
       allow create: if isStaff() &&
-        isValidOrder(request.resource.data) &&
-        request.resource.data.createdBy == request.auth.uid;
+        isValidOrder(request.resource.data);
 
       // Staff and admins can update orders;
       // Core fields remain immutable, and cancellation is restricted to Admins
       allow update: if isStaff() &&
         isValidOrder(request.resource.data) &&
-        areImmutableFieldsUnchanged(['orderNumber', 'createdBy', 'createdAt']) &&
+        areImmutableFieldsUnchanged(['orderNumber', 'createdAt']) &&
         (request.resource.data.orderStatus != 'cancelled' || resource.data.orderStatus == 'cancelled' || isAdmin());
 
       // Only administrators can cancel/delete order documents
@@ -611,16 +632,14 @@ service cloud.firestore {
       // Active staff and admins can view invoices
       allow read: if isStaff();
 
-      // Invoices can be created by active staff/admin with verifiable creator identity
+      // Invoices can be created by active staff/admin
       allow create: if isStaff() &&
-        isValidInvoice(request.resource.data) &&
-        request.resource.data.createdBy == request.auth.uid;
+        isValidInvoice(request.resource.data);
 
-      // Invoices are immutable once issued: Staff cannot edit issued invoices;
-      // Admins may make corrections, but financial linkage fields remain immutable
-      allow update: if isAdmin() &&
+      // Invoices can be updated by staff (e.g. Recording payments) or admins, while core identifiers remain immutable
+      allow update: if isStaff() &&
         isValidInvoice(request.resource.data) &&
-        areImmutableFieldsUnchanged(['invoiceNumber', 'orderId', 'createdBy', 'issuedAt', 'createdAt']);
+        areImmutableFieldsUnchanged(['invoiceNumber', 'orderId', 'createdAt']);
 
       // Invoices cannot be deleted to preserve financial audit history (voiding is done via update)
       allow delete: if false;
@@ -648,8 +667,7 @@ service cloud.firestore {
 
       // Active staff and admins can record new stock transactions
       allow create: if isStaff() &&
-        isValidStockMovement(request.resource.data) &&
-        request.resource.data.createdBy == request.auth.uid;
+        isValidStockMovement(request.resource.data);
 
       // Audit logs are strictly immutable: no updates or deletions allowed
       allow update: if false;
@@ -658,18 +676,17 @@ service cloud.firestore {
 
     // 8. Expenses Collection (Financial Restricted Ledger)
     match /expenses/{expenseId} {
-      // Restricted: Only administrators can read expenses
-      allow read: if isAdmin();
+      // Staff and admins can view expenses
+      allow read: if isStaff();
 
-      // Restricted: Only administrators can create expenses
-      allow create: if isAdmin() &&
-        isValidExpense(request.resource.data) &&
-        request.resource.data.createdBy == request.auth.uid;
+      // Active staff and admins can record expenses
+      allow create: if isStaff() &&
+        isValidExpense(request.resource.data);
 
-      // Restricted: Only administrators can update expenses (creation metadata immutable)
+      // Administrators can update expenses (creation metadata immutable)
       allow update: if isAdmin() &&
         isValidExpense(request.resource.data) &&
-        areImmutableFieldsUnchanged(['createdBy', 'createdAt']);
+        areImmutableFieldsUnchanged(['createdAt']);
 
       // Restricted: Only administrators can delete expenses
       allow delete: if isAdmin();

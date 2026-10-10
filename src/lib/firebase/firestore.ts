@@ -26,9 +26,56 @@ import {
   ProductCategory,
 } from '@/types';
 
-// Generic Firestore type converter helper
+/**
+ * Deeply sanitizes data objects before writing to Firestore.
+ * - Recursively eliminates all `undefined` values and keys with `undefined` values
+ * - Cleans up nested arrays by filtering out `undefined` entries
+ * - Preserves Date objects, Timestamps, and Firestore FieldValues (serverTimestamp, deleteField, increment, etc.)
+ * - Returns a clean plain object or primitive safe for setDoc, updateDoc, and addDoc
+ */
+export function sanitizeForFirestore<T = any>(data: T): any {
+  if (data === undefined) {
+    return undefined;
+  }
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  // Preserve Date instances
+  if (data instanceof Date) {
+    return data;
+  }
+  // Preserve Firestore Timestamp or FieldValue instances
+  if (
+    typeof (data as any)?.toDate === 'function' ||
+    typeof (data as any)?.toMillis === 'function' ||
+    (data as any)?._methodName !== undefined ||
+    (data as any)?.constructor?.name === 'FieldValue' ||
+    (data as any)?._delegate !== undefined
+  ) {
+    return data;
+  }
+  // Process Arrays: filter out undefined elements and sanitize nested items
+  if (Array.isArray(data)) {
+    return data
+      .map((item) => sanitizeForFirestore(item))
+      .filter((item) => item !== undefined);
+  }
+  // Process Plain Objects: omit keys whose value is undefined or evaluates to undefined
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      const sanitizedVal = sanitizeForFirestore(value);
+      if (sanitizedVal !== undefined) {
+        cleaned[key] = sanitizedVal;
+      }
+    }
+  }
+  return cleaned;
+}
+
+// Generic Firestore type converter helper with recursive sanitization
 export const createConverter = <T extends DocumentData>(): FirestoreDataConverter<T> => ({
-  toFirestore: (data: T) => data,
+  toFirestore: (data: T) => sanitizeForFirestore(data),
   fromFirestore: (snapshot: QueryDocumentSnapshot, options: SnapshotOptions): T => {
     return { id: snapshot.id, ...snapshot.data(options) } as unknown as T;
   },
@@ -206,7 +253,7 @@ export async function recordStockMovement(
         createdAt: now,
       };
 
-      transaction.set(newMovementRef, stockMovement);
+      transaction.set(newMovementRef, sanitizeForFirestore(stockMovement));
 
       return stockMovement;
     });
@@ -247,7 +294,7 @@ export async function logActivity(
   }
 
   try {
-    await addDoc(collection(db, 'activity_logs'), logItem);
+    await addDoc(collection(db, 'activity_logs'), sanitizeForFirestore(logItem));
   } catch (error) {
     console.warn('[Firestore] Failed to log activity:', error);
   }

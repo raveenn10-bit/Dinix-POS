@@ -38,7 +38,7 @@ import {
   INITIAL_SETTINGS,
   INITIAL_STAFF_USERS,
 } from './mockData';
-import { logActivity, recordStockMovement } from './firebase/firestore';
+import { logActivity, recordStockMovement, sanitizeForFirestore } from './firebase/firestore';
 import {
   getLiveProducts,
   getLiveOrders,
@@ -538,10 +538,10 @@ export async function createExpense(
   }
 
   try {
-    const docRef = await addDoc(collection(db, 'expenses'), {
+    const docRef = await addDoc(collection(db, 'expenses'), sanitizeForFirestore({
       ...expenseData,
       createdAt: now,
-    });
+    }));
     const saved: Expense = {
       id: docRef.id,
       ...expenseData,
@@ -584,7 +584,7 @@ export async function updateExpense(
   }
 
   try {
-    await updateDoc(doc(db, 'expenses', id), updatedData);
+    await updateDoc(doc(db, 'expenses', id), sanitizeForFirestore(updatedData));
     invalidateDataCache('expenses');
     await logActivity(
       'Expense Updated',
@@ -680,7 +680,7 @@ export async function createStaffAccount(
   }
 
   try {
-    await setDoc(doc(db, 'users', newUser.uid), newUser);
+    await setDoc(doc(db, 'users', newUser.uid), sanitizeForFirestore(newUser));
     await logActivity(
       'User Account Created',
       'user',
@@ -720,10 +720,10 @@ export async function toggleUserStatus(
   }
 
   try {
-    await updateDoc(doc(db, 'users', uid), {
+    await updateDoc(doc(db, 'users', uid), sanitizeForFirestore({
       active: newActiveState,
       updatedAt: now,
-    });
+    }));
     await logActivity(
       'User Status Changed',
       'user',
@@ -762,10 +762,10 @@ export async function updateUserRole(
   }
 
   try {
-    await updateDoc(doc(db, 'users', uid), {
+    await updateDoc(doc(db, 'users', uid), sanitizeForFirestore({
       role: newRole,
       updatedAt: now,
-    });
+    }));
     await logActivity(
       'User Role Changed',
       'user',
@@ -815,7 +815,7 @@ export async function saveBusinessSettings(
   }
 
   try {
-    await setDoc(doc(db, 'settings', 'business'), settings, { merge: true });
+    await setDoc(doc(db, 'settings', 'business'), sanitizeForFirestore(settings), { merge: true });
     invalidateDataCache('settings');
     await logActivity(
       'Settings Updated',

@@ -142,13 +142,14 @@ export const CategoryModal: React.FC<CategoryModalProps> = ({
     setSaving(true);
     try {
       const cleanPrefix = sanitizeSkuPrefix(skuPrefix || name);
+      const cleanDesc = description.trim();
       await onSaveCategory(
         {
           ...(editingCategory?.id ? { id: editingCategory.id } : {}),
           name: name.trim(),
           skuPrefix: cleanPrefix,
           active,
-          description: description.trim() || undefined,
+          ...(cleanDesc ? { description: cleanDesc } : {}),
         },
         currentUser
       );

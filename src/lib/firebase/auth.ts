@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from './config';
+import { sanitizeForFirestore } from './firestore';
 import { User, UserRole } from '@/types';
 
 // Default pre-seeded Master Admin user for local deployment
@@ -86,7 +87,7 @@ export async function loginWithEmail(
               updatedAt: Date.now(),
             };
             try {
-              await setDoc(doc(db, 'users', cred.user.uid), adminUser);
+              await setDoc(doc(db, 'users', cred.user.uid), sanitizeForFirestore(adminUser));
             } catch (firestoreErr) {
               console.warn('[Auth] Firestore profile setDoc deferred:', firestoreErr);
             }
@@ -284,7 +285,7 @@ export async function getCurrentUserProfile(uid: string): Promise<User | null> {
         };
 
         try {
-          await setDoc(userDocRef, fallbackUser);
+          await setDoc(userDocRef, sanitizeForFirestore(fallbackUser));
         } catch (err) {
           console.warn('[Auth] Firestore setDoc error:', err);
         }
@@ -328,7 +329,7 @@ export async function registerFirstAdmin(
         updatedAt: Date.now(),
       };
 
-      await setDoc(doc(db, 'users', credential.user.uid), adminUser);
+      await setDoc(doc(db, 'users', credential.user.uid), sanitizeForFirestore(adminUser));
       localStorage.setItem('danix_auth_session', JSON.stringify(adminUser));
       return adminUser;
     } catch (error) {
@@ -403,7 +404,7 @@ export async function createUserAccount(
         updatedAt: Date.now(),
       };
 
-      await setDoc(doc(db, 'users', credential.user.uid), newUser);
+      await setDoc(doc(db, 'users', credential.user.uid), sanitizeForFirestore(newUser));
       return newUser;
     } catch (error) {
       const firebaseError = error as { code?: string; message?: string };

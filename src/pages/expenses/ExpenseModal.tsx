@@ -70,12 +70,13 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      const cleanNotes = notes.trim();
       await onSave({
         title: title.trim(),
         category,
         amount: numAmount,
         date,
-        notes: notes.trim() || undefined,
+        ...(cleanNotes ? { notes: cleanNotes } : {}),
       });
       onClose();
     } catch (err) {

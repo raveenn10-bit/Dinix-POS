@@ -170,21 +170,25 @@ export const DeliveryModal: React.FC<DeliveryModalProps> = ({
 
     try {
       setIsSubmitting(true);
+      const cleanPhone2 = phone2.trim();
+      const cleanTracking = trackingNumber.trim();
+      const cleanNotes = notes.trim();
+
       await onSave({
-        orderNumber: orderNumber || `ORD-MANUAL-${Date.now().toString().slice(-4)}`,
+        orderNumber: orderNumber.trim() || `ORD-MANUAL-${Date.now().toString().slice(-4)}`,
         orderId: orderId || `ord-${Date.now()}`,
-        customerName,
-        phone,
-        phone2: phone2 || undefined,
-        address,
+        customerName: customerName.trim(),
+        phone: phone.trim(),
+        ...(cleanPhone2 ? { phone2: cleanPhone2 } : {}),
+        address: address.trim(),
         city,
         courier,
         serviceType,
-        trackingNumber: trackingNumber || undefined,
+        ...(cleanTracking ? { trackingNumber: cleanTracking } : {}),
         deliveryFee,
         codAmount: serviceType === 'COD' ? codAmount : 0,
         status,
-        notes: notes || undefined,
+        ...(cleanNotes ? { notes: cleanNotes } : {}),
       });
 
       notifySuccess(

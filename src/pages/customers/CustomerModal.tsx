@@ -96,13 +96,17 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
 
     setSaving(true);
     try {
+      const cleanEmail = email.trim();
+      const cleanAddress = address.trim();
+      const cleanNotes = notes.trim();
+
       await onSave({
         ...(customer?.id ? { id: customer.id } : {}),
         name: name.trim(),
         phone: formatSriLankanPhone(phone.trim()),
-        email: email.trim() || undefined,
-        address: address.trim() || undefined,
-        notes: notes.trim() || undefined,
+        ...(cleanEmail ? { email: cleanEmail } : {}),
+        ...(cleanAddress ? { address: cleanAddress } : {}),
+        ...(cleanNotes ? { notes: cleanNotes } : {}),
         totalOrders: customer?.totalOrders || 0,
         totalSpent: customer?.totalSpent || 0,
       });

@@ -181,20 +181,23 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     setSaving(true);
     try {
       const finalCategory = category === 'Other' ? customCategory.trim() : category;
+      const cleanBarcode = barcode.trim();
+      const cleanDescription = description.trim();
+      const cleanImageUrl = imageUrl.trim();
 
       await onSave({
         ...(product?.id ? { id: product.id } : {}),
         name: name.trim(),
         sku: sku.trim().toUpperCase(),
-        barcode: barcode.trim() || undefined,
+        ...(cleanBarcode ? { barcode: cleanBarcode } : {}),
         category: finalCategory,
-        description: description.trim() || undefined,
+        ...(cleanDescription ? { description: cleanDescription } : {}),
         costPrice: Number(costPrice),
         sellingPrice: Number(sellingPrice),
         stockQuantity: Number(stockQuantity),
         minimumStock: Number(minimumStock),
         active,
-        imageUrl: imageUrl.trim() || undefined,
+        ...(cleanImageUrl ? { imageUrl: cleanImageUrl } : {}),
       });
 
       notifySuccess(isEditing ? 'Product updated successfully' : 'New product created successfully');

@@ -25,6 +25,7 @@ import {
   DEFAULT_PREDEFINED_CATEGORIES,
   sanitizeSkuPrefix,
   logActivity,
+  sanitizeForFirestore,
 } from '@/lib/firebase/firestore';
 import {
   INITIAL_PRODUCTS,
@@ -351,22 +352,33 @@ export function useProducts() {
       updatedAt: now,
     };
 
-    if (!isFirebaseConfigured) {
-      const current = [...products];
-      const index = current.findIndex((p) => p.id === id);
-      let updated: Product[];
-      if (index !== -1) {
-        updated = current.map((p) => (p.id === id ? saved : p));
-      } else {
-        updated = [saved, ...current];
+    // 1. Optimistic local persistence & memory update
+    const current = [...products];
+    const index = current.findIndex((p) => p.id === id);
+    const updated = index !== -1 ? current.map((p) => (p.id === id ? saved : p)) : [saved, ...current];
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+    setProducts(updated);
+    productsStore.updateMemory((curr) => {
+      const idx = curr.findIndex((p) => p.id === id);
+      return idx !== -1 ? curr.map((p) => (p.id === id ? saved : p)) : [saved, ...curr];
+    });
+    invalidateDataCache('products');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'products', id), sanitizeForFirestore(saved));
+        await logActivity(
+          isNew ? 'CREATE_PRODUCT' : 'UPDATE_PRODUCT',
+          'product',
+          id,
+          `${isNew ? 'Created' : 'Updated'} product: ${saved.name} (SKU: ${saved.sku})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Product write deferred to local storage:', fbErr);
       }
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
-      setProducts(updated);
-      productsStore.updateMemory((curr) => {
-        const idx = curr.findIndex((p) => p.id === id);
-        return idx !== -1 ? curr.map((p) => (p.id === id ? saved : p)) : [saved, ...curr];
-      });
-      invalidateDataCache('products');
+    } else {
       logActivity(
         isNew ? 'CREATE_PRODUCT' : 'UPDATE_PRODUCT',
         'product',
@@ -374,33 +386,33 @@ export function useProducts() {
         `${isNew ? 'Created' : 'Updated'} product: ${saved.name} (SKU: ${saved.sku})`,
         user
       );
-      return saved;
     }
 
-    await setDoc(doc(db, 'products', id), saved);
-    productsStore.updateMemory((curr) => {
-      const idx = curr.findIndex((p) => p.id === id);
-      return idx !== -1 ? curr.map((p) => (p.id === id ? saved : p)) : [saved, ...curr];
-    });
-    invalidateDataCache('products');
-    await logActivity(
-      isNew ? 'CREATE_PRODUCT' : 'UPDATE_PRODUCT',
-      'product',
-      id,
-      `${isNew ? 'Created' : 'Updated'} product: ${saved.name} (SKU: ${saved.sku})`,
-      user
-    );
     return saved;
   };
 
   const deleteProduct = async (id: string, user: { uid: string; name: string }): Promise<void> => {
     const target = products.find((p) => p.id === id);
-    if (!isFirebaseConfigured) {
-      const updated = products.filter((p) => p.id !== id);
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
-      setProducts(updated);
-      productsStore.updateMemory((curr) => curr.filter((p) => p.id !== id));
-      invalidateDataCache('products');
+    const updated = products.filter((p) => p.id !== id);
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+    setProducts(updated);
+    productsStore.updateMemory((curr) => curr.filter((p) => p.id !== id));
+    invalidateDataCache('products');
+
+    if (isFirebaseConfigured) {
+      try {
+        await deleteDoc(doc(db, 'products', id));
+        await logActivity(
+          'DELETE_PRODUCT',
+          'product',
+          id,
+          `Deleted product ${target?.name || id} (SKU: ${target?.sku || 'N/A'})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Product delete deferred:', fbErr);
+      }
+    } else {
       logActivity(
         'DELETE_PRODUCT',
         'product',
@@ -408,19 +420,7 @@ export function useProducts() {
         `Deleted product ${target?.name || id} (SKU: ${target?.sku || 'N/A'})`,
         user
       );
-      return;
     }
-
-    await deleteDoc(doc(db, 'products', id));
-    productsStore.updateMemory((curr) => curr.filter((p) => p.id !== id));
-    invalidateDataCache('products');
-    await logActivity(
-      'DELETE_PRODUCT',
-      'product',
-      id,
-      `Deleted product ${target?.name || id} (SKU: ${target?.sku || 'N/A'})`,
-      user
-    );
   };
 
   return { products, loading, error, refresh: fetchProducts, saveProduct, deleteProduct };
@@ -513,22 +513,33 @@ export function useCategories() {
       updatedAt: now,
     };
 
-    if (!isFirebaseConfigured) {
-      const current = [...categories];
-      const index = current.findIndex((c) => c.id === id);
-      let updated: ProductCategory[];
-      if (index !== -1) {
-        updated = current.map((c) => (c.id === id ? saved : c));
-      } else {
-        updated = [saved, ...current];
+    // 1. Optimistic local persistence & memory update
+    const current = [...categories];
+    const index = current.findIndex((c) => c.id === id);
+    const updated = index !== -1 ? current.map((c) => (c.id === id ? saved : c)) : [saved, ...current];
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
+    setCategories(updated);
+    categoriesStore.updateMemory((curr) => {
+      const idx = curr.findIndex((c) => c.id === id);
+      return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
+    });
+    invalidateDataCache('products');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'categories', id), sanitizeForFirestore(saved));
+        await logActivity(
+          isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
+          'category',
+          id,
+          `${isNew ? 'Created' : 'Updated'} category: ${saved.name} (Prefix: ${saved.skuPrefix})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Category write deferred to local storage:', fbErr);
       }
-      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
-      setCategories(updated);
-      categoriesStore.updateMemory((curr) => {
-        const idx = curr.findIndex((c) => c.id === id);
-        return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
-      });
-      invalidateDataCache('products');
+    } else {
       logActivity(
         isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
         'category',
@@ -536,22 +547,8 @@ export function useCategories() {
         `${isNew ? 'Created' : 'Updated'} category: ${saved.name} (Prefix: ${saved.skuPrefix})`,
         user
       );
-      return saved;
     }
 
-    await setDoc(doc(db, 'categories', id), saved);
-    categoriesStore.updateMemory((curr) => {
-      const idx = curr.findIndex((c) => c.id === id);
-      return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
-    });
-    invalidateDataCache('products');
-    await logActivity(
-      isNew ? 'CREATE_CATEGORY' : 'UPDATE_CATEGORY',
-      'category',
-      id,
-      `${isNew ? 'Created' : 'Updated'} category: ${saved.name} (Prefix: ${saved.skuPrefix})`,
-      user
-    );
     return saved;
   };
 
@@ -570,12 +567,26 @@ export function useCategories() {
       updatedAt: now,
     };
 
-    if (!isFirebaseConfigured) {
-      const updated = categories.map((c) => (c.id === id ? updatedCategory : c));
-      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
-      setCategories(updated);
-      categoriesStore.updateMemory((curr) => curr.map((c) => (c.id === id ? updatedCategory : c)));
-      invalidateDataCache('products');
+    const updated = categories.map((c) => (c.id === id ? updatedCategory : c));
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
+    setCategories(updated);
+    categoriesStore.updateMemory((curr) => curr.map((c) => (c.id === id ? updatedCategory : c)));
+    invalidateDataCache('products');
+
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'categories', id), sanitizeForFirestore(updatedCategory), { merge: true });
+        await logActivity(
+          'UPDATE_CATEGORY',
+          'category',
+          id,
+          `${newActive ? 'Activated' : 'Deactivated'} category: ${target.name}`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Category toggle deferred:', fbErr);
+      }
+    } else {
       logActivity(
         'UPDATE_CATEGORY',
         'category',
@@ -583,19 +594,7 @@ export function useCategories() {
         `${newActive ? 'Activated' : 'Deactivated'} category: ${target.name}`,
         user
       );
-      return;
     }
-
-    await setDoc(doc(db, 'categories', id), updatedCategory, { merge: true });
-    categoriesStore.updateMemory((curr) => curr.map((c) => (c.id === id ? updatedCategory : c)));
-    invalidateDataCache('products');
-    await logActivity(
-      'UPDATE_CATEGORY',
-      'category',
-      id,
-      `${newActive ? 'Activated' : 'Deactivated'} category: ${target.name}`,
-      user
-    );
   };
 
   const deleteCategory = async (
@@ -614,12 +613,26 @@ export function useCategories() {
       );
     }
 
-    if (!isFirebaseConfigured) {
-      const updated = categories.filter((c) => c.id !== id);
-      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
-      setCategories(updated);
-      categoriesStore.updateMemory((curr) => curr.filter((c) => c.id !== id));
-      invalidateDataCache('products');
+    const updated = categories.filter((c) => c.id !== id);
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
+    setCategories(updated);
+    categoriesStore.updateMemory((curr) => curr.filter((c) => c.id !== id));
+    invalidateDataCache('products');
+
+    if (isFirebaseConfigured) {
+      try {
+        await deleteDoc(doc(db, 'categories', id));
+        await logActivity(
+          'DELETE_CATEGORY',
+          'category',
+          id,
+          `Deleted category: ${target.name} (SKU Prefix: ${target.skuPrefix})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Category delete deferred:', fbErr);
+      }
+    } else {
       logActivity(
         'DELETE_CATEGORY',
         'category',
@@ -627,19 +640,7 @@ export function useCategories() {
         `Deleted category: ${target.name} (SKU Prefix: ${target.skuPrefix})`,
         user
       );
-      return;
     }
-
-    await deleteDoc(doc(db, 'categories', id));
-    categoriesStore.updateMemory((curr) => curr.filter((c) => c.id !== id));
-    invalidateDataCache('products');
-    await logActivity(
-      'DELETE_CATEGORY',
-      'category',
-      id,
-      `Deleted category: ${target.name} (SKU Prefix: ${target.skuPrefix})`,
-      user
-    );
   };
 
   return {
@@ -713,22 +714,33 @@ export function useCustomers() {
       updatedAt: now,
     };
 
-    if (!isFirebaseConfigured) {
-      const current = [...customers];
-      const index = current.findIndex((c) => c.id === id);
-      let updated: Customer[];
-      if (index !== -1) {
-        updated = current.map((c) => (c.id === id ? saved : c));
-      } else {
-        updated = [saved, ...current];
+    // 1. Optimistic local persistence & memory update
+    const current = [...customers];
+    const index = current.findIndex((c) => c.id === id);
+    const updated = index !== -1 ? current.map((c) => (c.id === id ? saved : c)) : [saved, ...current];
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updated));
+    setCustomers(updated);
+    customersStore.updateMemory((curr) => {
+      const idx = curr.findIndex((c) => c.id === id);
+      return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
+    });
+    invalidateDataCache('orders');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'customers', id), sanitizeForFirestore(saved));
+        await logActivity(
+          isNew ? 'CREATE_CUSTOMER' : 'UPDATE_CUSTOMER',
+          'customer',
+          id,
+          `${isNew ? 'Added' : 'Updated'} customer: ${saved.name} (${saved.phone})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Customer write deferred to local storage:', fbErr);
       }
-      localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updated));
-      setCustomers(updated);
-      customersStore.updateMemory((curr) => {
-        const idx = curr.findIndex((c) => c.id === id);
-        return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
-      });
-      invalidateDataCache('orders');
+    } else {
       logActivity(
         isNew ? 'CREATE_CUSTOMER' : 'UPDATE_CUSTOMER',
         'customer',
@@ -736,22 +748,8 @@ export function useCustomers() {
         `${isNew ? 'Added' : 'Updated'} customer: ${saved.name} (${saved.phone})`,
         user
       );
-      return saved;
     }
 
-    await setDoc(doc(db, 'customers', id), saved);
-    customersStore.updateMemory((curr) => {
-      const idx = curr.findIndex((c) => c.id === id);
-      return idx !== -1 ? curr.map((c) => (c.id === id ? saved : c)) : [saved, ...curr];
-    });
-    invalidateDataCache('orders');
-    await logActivity(
-      isNew ? 'CREATE_CUSTOMER' : 'UPDATE_CUSTOMER',
-      'customer',
-      id,
-      `${isNew ? 'Added' : 'Updated'} customer: ${saved.name} (${saved.phone})`,
-      user
-    );
     return saved;
   };
 
@@ -839,41 +837,71 @@ export function useOrders() {
       }
     }
 
-    if (!isFirebaseConfigured) {
-      const current = [...orders];
-      const index = current.findIndex((o) => o.id === id);
-      let updated: Order[];
-      if (index !== -1) {
-        updated = current.map((o) => (o.id === id ? saved : o));
-      } else {
-        updated = [saved, ...current];
-      }
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(updated));
-      setOrders(updated);
-      ordersStore.updateMemory((curr) => {
-        const idx = curr.findIndex((o) => o.id === id);
-        return idx !== -1 ? curr.map((o) => (o.id === id ? saved : o)) : [saved, ...curr];
-      });
-      invalidateDataCache('orders');
+    // 1. Optimistic local persistence & memory update
+    const current = [...orders];
+    const index = current.findIndex((o) => o.id === id);
+    const updated = index !== -1 ? current.map((o) => (o.id === id ? saved : o)) : [saved, ...current];
+    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(updated));
+    setOrders(updated);
+    ordersStore.updateMemory((curr) => {
+      const idx = curr.findIndex((o) => o.id === id);
+      return idx !== -1 ? curr.map((o) => (o.id === id ? saved : o)) : [saved, ...curr];
+    });
+    invalidateDataCache('orders');
 
-      // Update customer stats
-      if (saved.customerId) {
-        const storedCustomers: Customer[] = JSON.parse(
-          localStorage.getItem(STORAGE_KEYS.CUSTOMERS) || '[]'
-        );
-        const cIdx = storedCustomers.findIndex((c) => c.id === saved.customerId);
-        if (cIdx !== -1) {
-          storedCustomers[cIdx].totalOrders = (storedCustomers[cIdx].totalOrders || 0) + (isNew ? 1 : 0);
-          storedCustomers[cIdx].totalSpent = (storedCustomers[cIdx].totalSpent || 0) + (isNew ? saved.total : 0);
-          localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(storedCustomers));
-          customersStore.updateMemory((curr) => {
-            const idx = curr.findIndex((c) => c.id === saved.customerId);
-            if (idx === -1) return curr;
-            return curr.map((c) => (c.id === saved.customerId ? storedCustomers[cIdx] : c));
-          });
+    // Update customer stats locally
+    if (saved.customerId) {
+      const storedCustomers: Customer[] = JSON.parse(
+        localStorage.getItem(STORAGE_KEYS.CUSTOMERS) || '[]'
+      );
+      const cIdx = storedCustomers.findIndex((c) => c.id === saved.customerId);
+      if (cIdx !== -1) {
+        storedCustomers[cIdx].totalOrders = (storedCustomers[cIdx].totalOrders || 0) + (isNew ? 1 : 0);
+        storedCustomers[cIdx].totalSpent = (storedCustomers[cIdx].totalSpent || 0) + (isNew ? saved.total : 0);
+        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(storedCustomers));
+        customersStore.updateMemory((curr) => {
+          const idx = curr.findIndex((c) => c.id === saved.customerId);
+          if (idx === -1) return curr;
+          return curr.map((c) => (c.id === saved.customerId ? storedCustomers[cIdx] : c));
+        });
+      }
+    }
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'orders', id), sanitizeForFirestore(saved));
+
+        if (saved.customerId && isNew) {
+          try {
+            const customerRef = doc(db, 'customers', saved.customerId);
+            const custDoc = await getDoc(customerRef);
+            if (custDoc.exists()) {
+              const cData = custDoc.data();
+              const currentTotal = cData.totalSpent || 0;
+              const currentCount = cData.totalOrders || 0;
+              await updateDoc(customerRef, sanitizeForFirestore({
+                totalOrders: currentCount + 1,
+                totalSpent: currentTotal + saved.total,
+                updatedAt: now,
+              }));
+            }
+          } catch (e) {
+            console.warn('Customer stats update error:', e);
+          }
         }
-      }
 
+        await logActivity(
+          isNew ? 'CREATE_ORDER' : 'UPDATE_ORDER',
+          'order',
+          id,
+          `${isNew ? 'Created' : 'Updated'} order #${saved.orderNumber} for ${saved.customerName} (Rs. ${saved.total})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Order write deferred to local storage:', fbErr);
+      }
+    } else {
       logActivity(
         isNew ? 'CREATE_ORDER' : 'UPDATE_ORDER',
         'order',
@@ -881,50 +909,8 @@ export function useOrders() {
         `${isNew ? 'Created' : 'Updated'} order #${saved.orderNumber} for ${saved.customerName} (Rs. ${saved.total})`,
         user
       );
-      return saved;
     }
 
-    await setDoc(doc(db, 'orders', id), saved);
-    ordersStore.updateMemory((curr) => {
-      const idx = curr.findIndex((o) => o.id === id);
-      return idx !== -1 ? curr.map((o) => (o.id === id ? saved : o)) : [saved, ...curr];
-    });
-    invalidateDataCache('orders');
-
-    // Update customer stats in Firestore (Optimized: single getDoc reads only 1 doc!)
-    if (saved.customerId && isNew) {
-      try {
-        const customerRef = doc(db, 'customers', saved.customerId);
-        const custDoc = await getDoc(customerRef);
-        if (custDoc.exists()) {
-          const cData = custDoc.data();
-          const currentTotal = cData.totalSpent || 0;
-          const currentCount = cData.totalOrders || 0;
-          await updateDoc(customerRef, {
-            totalOrders: currentCount + 1,
-            totalSpent: currentTotal + saved.total,
-            updatedAt: now,
-          });
-          customersStore.updateMemory((curr) =>
-            curr.map((c) =>
-              c.id === saved.customerId
-                ? { ...c, totalOrders: currentCount + 1, totalSpent: currentTotal + saved.total, updatedAt: now }
-                : c
-            )
-          );
-        }
-      } catch (e) {
-        console.warn('Customer stats update error:', e);
-      }
-    }
-
-    await logActivity(
-      isNew ? 'CREATE_ORDER' : 'UPDATE_ORDER',
-      'order',
-      id,
-      `${isNew ? 'Created' : 'Updated'} order #${saved.orderNumber} for ${saved.customerName} (Rs. ${saved.total})`,
-      user
-    );
     return saved;
   };
 
@@ -984,12 +970,28 @@ export function useOrders() {
       }
     }
 
-    if (!isFirebaseConfigured) {
-      const current = orders.map((o) => (o.id === orderId ? updatedOrder : o));
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(current));
-      setOrders(current);
-      ordersStore.updateMemory((curr) => curr.map((o) => (o.id === orderId ? updatedOrder : o)));
-      invalidateDataCache('orders');
+    // 1. Optimistic local update
+    const current = orders.map((o) => (o.id === orderId ? updatedOrder : o));
+    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(current));
+    setOrders(current);
+    ordersStore.updateMemory((curr) => curr.map((o) => (o.id === orderId ? updatedOrder : o)));
+    invalidateDataCache('orders');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'orders', orderId), sanitizeForFirestore(updatedOrder));
+        await logActivity(
+          'ORDER_STATUS_CHANGED',
+          'order',
+          orderId,
+          `Order #${existing.orderNumber} status changed from ${previousStatus} to ${newStatus}`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Order status update deferred to local storage:', fbErr);
+      }
+    } else {
       logActivity(
         'ORDER_STATUS_CHANGED',
         'order',
@@ -997,19 +999,7 @@ export function useOrders() {
         `Order #${existing.orderNumber} status changed from ${previousStatus} to ${newStatus}`,
         user
       );
-      return;
     }
-
-    await setDoc(doc(db, 'orders', orderId), updatedOrder);
-    ordersStore.updateMemory((curr) => curr.map((o) => (o.id === orderId ? updatedOrder : o)));
-    invalidateDataCache('orders');
-    await logActivity(
-      'ORDER_STATUS_CHANGED',
-      'order',
-      orderId,
-      `Order #${existing.orderNumber} status changed from ${previousStatus} to ${newStatus}`,
-      user
-    );
   };
 
   return { orders, loading, error, refresh: fetchOrders, saveOrder, updateOrderStatus };
@@ -1164,22 +1154,33 @@ export function useInvoices() {
       createdAt: (invoiceData as Partial<Invoice>).createdAt || now,
     };
 
-    if (!isFirebaseConfigured) {
-      const current = [...invoices];
-      const index = current.findIndex((inv) => inv.id === id);
-      let updated: Invoice[];
-      if (index !== -1) {
-        updated = current.map((inv) => (inv.id === id ? saved : inv));
-      } else {
-        updated = [saved, ...current];
+    // 1. Optimistic local persistence & memory update
+    const current = [...invoices];
+    const index = current.findIndex((inv) => inv.id === id);
+    const updated = index !== -1 ? current.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...current];
+    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
+    setInvoices(updated);
+    invoicesStore.updateMemory((curr) => {
+      const idx = curr.findIndex((inv) => inv.id === id);
+      return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
+    });
+    invalidateDataCache('orders');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'invoices', id), sanitizeForFirestore(saved));
+        await logActivity(
+          isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
+          'invoice',
+          id,
+          `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Invoice write deferred to local storage:', fbErr);
       }
-      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
-      setInvoices(updated);
-      invoicesStore.updateMemory((curr) => {
-        const idx = curr.findIndex((inv) => inv.id === id);
-        return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
-      });
-      invalidateDataCache('orders');
+    } else {
       logActivity(
         isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
         'invoice',
@@ -1187,22 +1188,8 @@ export function useInvoices() {
         `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
         user
       );
-      return saved;
     }
 
-    await setDoc(doc(db, 'invoices', id), saved);
-    invoicesStore.updateMemory((curr) => {
-      const idx = curr.findIndex((inv) => inv.id === id);
-      return idx !== -1 ? curr.map((inv) => (inv.id === id ? saved : inv)) : [saved, ...curr];
-    });
-    invalidateDataCache('orders');
-    await logActivity(
-      isNew ? 'CREATE_INVOICE' : 'UPDATE_INVOICE',
-      'invoice',
-      id,
-      `${isNew ? 'Generated' : 'Updated'} invoice #${saved.invoiceNumber} for ${saved.customerSnapshot.name} (Rs. ${saved.total})`,
-      user
-    );
     return saved;
   };
 
@@ -1254,23 +1241,39 @@ export function useInvoices() {
 
         if (isFirebaseConfigured && target.orderId) {
           const orderRef = doc(db, 'orders', target.orderId);
-          await updateDoc(orderRef, {
+          await updateDoc(orderRef, sanitizeForFirestore({
             paymentStatus: newStatus,
             paymentMethod: paymentMethod || target.paymentMethod,
             updatedAt: Date.now(),
-          });
+          }));
         }
       } catch (err) {
         console.warn('Could not sync payment status to linked order:', err);
       }
     }
 
-    if (!isFirebaseConfigured) {
-      const current = invoices.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv));
-      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(current));
-      setInvoices(current);
-      invoicesStore.updateMemory((curr) => curr.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv)));
-      invalidateDataCache('orders');
+    // 1. Optimistic local update
+    const current = invoices.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv));
+    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(current));
+    setInvoices(current);
+    invoicesStore.updateMemory((curr) => curr.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv)));
+    invalidateDataCache('orders');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'invoices', invoiceId), sanitizeForFirestore(updatedInvoice));
+        await logActivity(
+          'RECORD_PAYMENT',
+          'invoice',
+          invoiceId,
+          `Recorded payment of Rs. ${paidAddition} for invoice #${target.invoiceNumber}. New status: ${newStatus}`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Payment record write deferred to local storage:', fbErr);
+      }
+    } else {
       logActivity(
         'RECORD_PAYMENT',
         'invoice',
@@ -1278,30 +1281,35 @@ export function useInvoices() {
         `Recorded payment of Rs. ${paidAddition} for invoice #${target.invoiceNumber}. New status: ${newStatus}`,
         user
       );
-      return updatedInvoice;
     }
 
-    await setDoc(doc(db, 'invoices', invoiceId), updatedInvoice);
-    invoicesStore.updateMemory((curr) => curr.map((inv) => (inv.id === invoiceId ? updatedInvoice : inv)));
-    invalidateDataCache('orders');
-    await logActivity(
-      'RECORD_PAYMENT',
-      'invoice',
-      invoiceId,
-      `Recorded payment of Rs. ${paidAddition} for invoice #${target.invoiceNumber}. New status: ${newStatus}`,
-      user
-    );
     return updatedInvoice;
   };
 
   const deleteInvoice = async (id: string, user: { uid: string; name: string }): Promise<void> => {
     const target = invoices.find((inv) => inv.id === id);
-    if (!isFirebaseConfigured) {
-      const updated = invoices.filter((inv) => inv.id !== id);
-      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
-      setInvoices(updated);
-      invoicesStore.updateMemory((curr) => curr.filter((inv) => inv.id !== id));
-      invalidateDataCache('orders');
+    // 1. Optimistic local update
+    const updated = invoices.filter((inv) => inv.id !== id);
+    localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(updated));
+    setInvoices(updated);
+    invoicesStore.updateMemory((curr) => curr.filter((inv) => inv.id !== id));
+    invalidateDataCache('orders');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await deleteDoc(doc(db, 'invoices', id));
+        await logActivity(
+          'DELETE_INVOICE',
+          'invoice',
+          id,
+          `Deleted invoice #${target?.invoiceNumber || id}`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Invoice deletion deferred to local storage:', fbErr);
+      }
+    } else {
       logActivity(
         'DELETE_INVOICE',
         'invoice',
@@ -1309,19 +1317,7 @@ export function useInvoices() {
         `Deleted invoice #${target?.invoiceNumber || id}`,
         user
       );
-      return;
     }
-
-    await deleteDoc(doc(db, 'invoices', id));
-    invoicesStore.updateMemory((curr) => curr.filter((inv) => inv.id !== id));
-    invalidateDataCache('orders');
-    await logActivity(
-      'DELETE_INVOICE',
-      'invoice',
-      id,
-      `Deleted invoice #${target?.invoiceNumber || id}`,
-      user
-    );
   };
 
   return {
@@ -1417,7 +1413,7 @@ export function useDeliveries() {
         if (deliveryStatus === 'delivered') updates.orderStatus = 'delivered';
         else if (deliveryStatus === 'dispatched' || deliveryStatus === 'in_transit') updates.orderStatus = 'shipped';
         else if (deliveryStatus === 'returned') updates.orderStatus = 'returned';
-        await updateDoc(orderRef, updates);
+        await updateDoc(orderRef, sanitizeForFirestore(updates));
         ordersStore.updateMemory((curr) =>
           curr.map((o) => (o.id === orderId ? { ...o, ...updates } : o))
         );
@@ -1445,22 +1441,33 @@ export function useDeliveries() {
     // Auto sync linked order if status changed
     await syncLinkedOrder(saved.orderId || saved.orderNumber, saved.status);
 
-    if (!isFirebaseConfigured) {
-      const current = [...deliveries];
-      const index = current.findIndex((del) => del.id === id);
-      let updated: Delivery[];
-      if (index !== -1) {
-        updated = current.map((del) => (del.id === id ? saved : del));
-      } else {
-        updated = [saved, ...current];
+    // 1. Optimistic local persistence & memory update
+    const current = [...deliveries];
+    const index = current.findIndex((del) => del.id === id);
+    const updated = index !== -1 ? current.map((del) => (del.id === id ? saved : del)) : [saved, ...current];
+    localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(updated));
+    setDeliveries(updated);
+    deliveriesStore.updateMemory((curr) => {
+      const idx = curr.findIndex((del) => del.id === id);
+      return idx !== -1 ? curr.map((del) => (del.id === id ? saved : del)) : [saved, ...curr];
+    });
+    invalidateDataCache('deliveries');
+
+    // 2. Cloud Firestore sync
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'deliveries', id), sanitizeForFirestore(saved));
+        await logActivity(
+          isNew ? 'CREATE_DELIVERY' : 'UPDATE_DELIVERY',
+          'delivery',
+          id,
+          `${isNew ? 'Created' : 'Updated'} delivery for Order #${saved.orderNumber || saved.orderId} via ${saved.courier} (Tracking: ${saved.trackingNumber || 'N/A'})`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Delivery write deferred to local storage:', fbErr);
       }
-      localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(updated));
-      setDeliveries(updated);
-      deliveriesStore.updateMemory((curr) => {
-        const idx = curr.findIndex((del) => del.id === id);
-        return idx !== -1 ? curr.map((del) => (del.id === id ? saved : del)) : [saved, ...curr];
-      });
-      invalidateDataCache('deliveries');
+    } else {
       logActivity(
         isNew ? 'CREATE_DELIVERY' : 'UPDATE_DELIVERY',
         'delivery',
@@ -1468,22 +1475,8 @@ export function useDeliveries() {
         `${isNew ? 'Created' : 'Updated'} delivery for Order #${saved.orderNumber || saved.orderId} via ${saved.courier} (Tracking: ${saved.trackingNumber || 'N/A'})`,
         user
       );
-      return saved;
     }
 
-    await setDoc(doc(db, 'deliveries', id), saved);
-    deliveriesStore.updateMemory((curr) => {
-      const idx = curr.findIndex((del) => del.id === id);
-      return idx !== -1 ? curr.map((del) => (del.id === id ? saved : del)) : [saved, ...curr];
-    });
-    invalidateDataCache('deliveries');
-    await logActivity(
-      isNew ? 'CREATE_DELIVERY' : 'UPDATE_DELIVERY',
-      'delivery',
-      id,
-      `${isNew ? 'Created' : 'Updated'} delivery for Order #${saved.orderNumber || saved.orderId} via ${saved.courier} (Tracking: ${saved.trackingNumber || 'N/A'})`,
-      user
-    );
     return saved;
   };
 
@@ -1510,12 +1503,26 @@ export function useDeliveries() {
     // Auto sync linked order if delivered or status changed
     await syncLinkedOrder(target.orderId || target.orderNumber, newStatus);
 
-    if (!isFirebaseConfigured) {
-      const current = deliveries.map((del) => (del.id === deliveryId ? updated : del));
-      localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(current));
-      setDeliveries(current);
-      deliveriesStore.updateMemory((curr) => curr.map((del) => (del.id === deliveryId ? updated : del)));
-      invalidateDataCache('deliveries');
+    const current = deliveries.map((del) => (del.id === deliveryId ? updated : del));
+    localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(current));
+    setDeliveries(current);
+    deliveriesStore.updateMemory((curr) => curr.map((del) => (del.id === deliveryId ? updated : del)));
+    invalidateDataCache('deliveries');
+
+    if (isFirebaseConfigured) {
+      try {
+        await setDoc(doc(db, 'deliveries', deliveryId), sanitizeForFirestore(updated));
+        await logActivity(
+          'DELIVERY_STATUS_CHANGED',
+          'delivery',
+          deliveryId,
+          `Delivery for Order #${target.orderNumber || target.orderId} marked ${newStatus}`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Delivery status update deferred to local storage:', fbErr);
+      }
+    } else {
       logActivity(
         'DELIVERY_STATUS_CHANGED',
         'delivery',
@@ -1523,29 +1530,31 @@ export function useDeliveries() {
         `Delivery for Order #${target.orderNumber || target.orderId} marked ${newStatus}`,
         user
       );
-      return;
     }
-
-    await setDoc(doc(db, 'deliveries', deliveryId), updated);
-    deliveriesStore.updateMemory((curr) => curr.map((del) => (del.id === deliveryId ? updated : del)));
-    invalidateDataCache('deliveries');
-    await logActivity(
-      'DELIVERY_STATUS_CHANGED',
-      'delivery',
-      deliveryId,
-      `Delivery for Order #${target.orderNumber || target.orderId} marked ${newStatus}`,
-      user
-    );
   };
 
   const deleteDelivery = async (id: string, user: { uid: string; name: string }): Promise<void> => {
     const target = deliveries.find((del) => del.id === id);
-    if (!isFirebaseConfigured) {
-      const updated = deliveries.filter((del) => del.id !== id);
-      localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(updated));
-      setDeliveries(updated);
-      deliveriesStore.updateMemory((curr) => curr.filter((del) => del.id !== id));
-      invalidateDataCache('deliveries');
+    const updated = deliveries.filter((del) => del.id !== id);
+    localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(updated));
+    setDeliveries(updated);
+    deliveriesStore.updateMemory((curr) => curr.filter((del) => del.id !== id));
+    invalidateDataCache('deliveries');
+
+    if (isFirebaseConfigured) {
+      try {
+        await deleteDoc(doc(db, 'deliveries', id));
+        await logActivity(
+          'DELETE_DELIVERY',
+          'delivery',
+          id,
+          `Deleted delivery for Order #${target?.orderNumber || target?.orderId || id}`,
+          user
+        );
+      } catch (fbErr) {
+        console.warn('[Firestore Sync] Delivery delete deferred to local storage:', fbErr);
+      }
+    } else {
       logActivity(
         'DELETE_DELIVERY',
         'delivery',
@@ -1553,19 +1562,7 @@ export function useDeliveries() {
         `Deleted delivery for Order #${target?.orderNumber || target?.orderId || id}`,
         user
       );
-      return;
     }
-
-    await deleteDoc(doc(db, 'deliveries', id));
-    deliveriesStore.updateMemory((curr) => curr.filter((del) => del.id !== id));
-    invalidateDataCache('deliveries');
-    await logActivity(
-      'DELETE_DELIVERY',
-      'delivery',
-      id,
-      `Deleted delivery for Order #${target?.orderNumber || target?.orderId || id}`,
-      user
-    );
   };
 
   return {

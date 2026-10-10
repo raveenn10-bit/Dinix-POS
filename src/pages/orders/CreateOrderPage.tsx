@@ -154,7 +154,7 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
         unitPrice: product.sellingPrice,
         discount: 0,
         lineTotal: product.sellingPrice * quantityToAdd,
-        imageUrl: product.imageUrl,
+        ...(product.imageUrl ? { imageUrl: product.imageUrl } : {}),
       };
 
       notifySuccess(`Added ${product.name}`);
@@ -259,13 +259,28 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
       const rand = Math.floor(10000 + Math.random() * 90000);
       const orderNumber = `ORD-${year}-${rand}`;
 
+      const cleanAddress = customerAddress.trim();
+      const cleanNotes = orderNotes.trim();
+
       const newOrderData: Omit<Order, 'id' | 'createdAt' | 'updatedAt'> = {
         orderNumber,
-        customerId: selectedCustomerId || undefined,
+        ...(selectedCustomerId ? { customerId: selectedCustomerId } : {}),
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
-        customerAddress: customerAddress.trim() || undefined,
-        items,
+        ...(cleanAddress ? { customerAddress: cleanAddress } : {}),
+        items: items.map((item) => {
+          const cleanItem: OrderItem = {
+            productId: item.productId,
+            sku: item.sku,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            discount: item.discount,
+            lineTotal: item.lineTotal,
+            ...(item.imageUrl ? { imageUrl: item.imageUrl } : {}),
+          };
+          return cleanItem;
+        }),
         subtotal,
         discount: orderDiscount,
         deliveryFee: effectiveDeliveryFee,
@@ -274,7 +289,7 @@ export const CreateOrderPage: React.FC<CreateOrderPageProps> = ({
         paymentStatus,
         orderStatus,
         deliveryStatus: 'pending',
-        notes: orderNotes.trim() || undefined,
+        ...(cleanNotes ? { notes: cleanNotes } : {}),
         createdBy: userProfile?.name || 'Danix Operator',
       };
 

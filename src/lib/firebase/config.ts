@@ -62,6 +62,7 @@ function createOptimizedFirestore(firebaseApp: FirebaseApp): Firestore {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
       }),
+      ignoreUndefinedProperties: true,
     });
   } catch {
     // If Firestore was already initialized or localCache is unsupported in environment

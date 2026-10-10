@@ -55,11 +55,12 @@ export const UserModal: React.FC<UserModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      const cleanPhone = phone.trim();
       await onSave({
         name: name.trim(),
         email: email.trim().toLowerCase(),
         role,
-        phone: phone.trim() || undefined,
+        ...(cleanPhone ? { phone: cleanPhone } : {}),
       });
       onClose();
     } catch (err) {

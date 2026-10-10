@@ -505,6 +505,88 @@ async function main() {
   });
 
   // --------------------------------------------------------------------------
+  // DOMAIN 12: FIRESTORE SERIALIZATION & SANITIZATION INTEGRITY
+  // --------------------------------------------------------------------------
+  console.log('\n--- Domain 12: Firestore Data Sanitization & Undefined Guard ---');
+
+  await runTest('Serialization', 'Verify ignoreUndefinedProperties: true is configured in initializeFirestore', () => {
+    const configCode = fs.readFileSync(path.join(rootDir, 'src/lib/firebase/config.ts'), 'utf-8');
+    assert(configCode.includes('ignoreUndefinedProperties: true'), 'Missing ignoreUndefinedProperties: true in initializeFirestore settings');
+  });
+
+  await runTest('Serialization', 'Verify sanitizeForFirestore is exported and used in createConverter', () => {
+    const firestoreCode = fs.readFileSync(path.join(rootDir, 'src/lib/firebase/firestore.ts'), 'utf-8');
+    assert(firestoreCode.includes('export function sanitizeForFirestore'), 'Missing sanitizeForFirestore in firestore.ts');
+    assert(firestoreCode.includes('toFirestore: (data: T) => sanitizeForFirestore(data)'), 'createConverter must call sanitizeForFirestore in toFirestore');
+  });
+
+  await runTest('Serialization', 'Verify deep recursive sanitization logic strips undefined properties', () => {
+    function sanitizeForFirestore(data) {
+      if (data === undefined) return undefined;
+      if (data === null || typeof data !== 'object') return data;
+      if (data instanceof Date) return data;
+      if (
+        typeof data?.toDate === 'function' ||
+        typeof data?.toMillis === 'function' ||
+        data?._methodName !== undefined ||
+        data?.constructor?.name === 'FieldValue' ||
+        data?._delegate !== undefined
+      ) return data;
+      if (Array.isArray(data)) {
+        return data.map((item) => sanitizeForFirestore(item)).filter((item) => item !== undefined);
+      }
+      const cleaned = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (value !== undefined) {
+          const sanitizedVal = sanitizeForFirestore(value);
+          if (sanitizedVal !== undefined) {
+            cleaned[key] = sanitizedVal;
+          }
+        }
+      }
+      return cleaned;
+    }
+
+    const testInput = {
+      id: 'prod-001',
+      name: 'Test Tea',
+      barcode: undefined,
+      description: undefined,
+      costPrice: 500,
+      active: true,
+      tags: ['tea', undefined, 'black'],
+      meta: {
+        author: 'Admin',
+        optionalNote: undefined,
+        deep: {
+          valid: 123,
+          bad: undefined,
+        },
+      },
+    };
+
+    const sanitized = sanitizeForFirestore(testInput);
+    assert(!('barcode' in sanitized), 'barcode should be omitted');
+    assert(!('description' in sanitized), 'description should be omitted');
+    assertEqual(sanitized.id, 'prod-001', 'id should be preserved');
+    assertEqual(sanitized.costPrice, 500, 'costPrice should be preserved');
+    assertEqual(sanitized.active, true, 'active boolean should be preserved');
+    assertEqual(sanitized.tags.length, 2, 'array should omit undefined elements');
+    assertEqual(sanitized.tags[0], 'tea', 'first element preserved');
+    assertEqual(sanitized.tags[1], 'black', 'second element preserved');
+    assert(!('optionalNote' in sanitized.meta), 'meta.optionalNote should be omitted');
+    assertEqual(sanitized.meta.deep.valid, 123, 'meta.deep.valid should be preserved');
+    assert(!('bad' in sanitized.meta.deep), 'meta.deep.bad should be omitted');
+  });
+
+  await runTest('Serialization', 'Verify modals and stores sanitize document writes', () => {
+    const dataStoreCode = fs.readFileSync(path.join(rootDir, 'src/lib/dataStore.ts'), 'utf-8');
+    const dataServiceCode = fs.readFileSync(path.join(rootDir, 'src/lib/dataService.ts'), 'utf-8');
+    assert(dataStoreCode.includes('sanitizeForFirestore'), 'dataStore.ts must import and use sanitizeForFirestore');
+    assert(dataServiceCode.includes('sanitizeForFirestore'), 'dataService.ts must import and use sanitizeForFirestore');
+  });
+
+  // --------------------------------------------------------------------------
   // SUMMARY REPORT
   // --------------------------------------------------------------------------
   console.log('\n==============================================================================');
