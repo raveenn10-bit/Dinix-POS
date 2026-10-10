@@ -10,8 +10,8 @@ import {
 } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/storage';
 
-const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY || '';
-const rawProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || '';
+const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDiFV21hQk6wSoiR4Jqwuiij1mGQOVBk0s';
+const rawProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'danix-pos-lk-2026';
 
 // Validate if Firebase configuration has valid credentials
 export const isFirebaseConfigured = Boolean(

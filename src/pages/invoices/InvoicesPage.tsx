@@ -32,6 +32,7 @@ export const InvoicesPage: React.FC = () => {
   // Search & Filters state
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [customDate, setCustomDate] = useState<string>('');
 
@@ -95,7 +96,13 @@ export const InvoicesPage: React.FC = () => {
         return false;
       }
 
-      // 3. Date filter
+      // 3. Invoice Format / Type filter (Retail vs Wholesale)
+      if (typeFilter !== 'all') {
+        const invType = inv.invoiceType || 'retail';
+        if (invType !== typeFilter) return false;
+      }
+
+      // 4. Date filter
       const now = Date.now();
       const invDate = new Date(inv.createdAt);
       if (dateFilter === 'today') {
@@ -114,7 +121,7 @@ export const InvoicesPage: React.FC = () => {
 
       return true;
     });
-  }, [invoices, searchTerm, statusFilter, dateFilter, customDate]);
+  }, [invoices, searchTerm, statusFilter, typeFilter, dateFilter, customDate]);
 
   // Handle open Record Payment modal
   const handleOpenPaymentModal = (invoice: Invoice) => {
@@ -313,7 +320,7 @@ export const InvoicesPage: React.FC = () => {
       <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12">
           {/* Search Input */}
-          <div className="relative sm:col-span-2 lg:col-span-5">
+          <div className="relative sm:col-span-2 lg:col-span-4">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -333,6 +340,19 @@ export const InvoicesPage: React.FC = () => {
             )}
           </div>
 
+          {/* Invoice Type (Retail vs Wholesale) Filter */}
+          <div className="lg:col-span-2">
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-xs text-slate-800 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 transition-colors font-medium"
+            >
+              <option value="all">All Types (Retail & Wholesale)</option>
+              <option value="retail">🏷️ Retail Invoices</option>
+              <option value="wholesale">📦 Wholesale Invoices</option>
+            </select>
+          </div>
+
           {/* Payment Status Filter */}
           <div className="lg:col-span-3">
             <select
@@ -349,7 +369,7 @@ export const InvoicesPage: React.FC = () => {
           </div>
 
           {/* Date Filter */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-3">
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
@@ -365,7 +385,7 @@ export const InvoicesPage: React.FC = () => {
 
           {/* Custom Date Input (if selected) */}
           {dateFilter === 'custom' && (
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-12">
               <input
                 type="date"
                 value={customDate}
@@ -376,13 +396,14 @@ export const InvoicesPage: React.FC = () => {
           )}
 
           {/* Clear Filters (if active) */}
-          {(searchTerm || statusFilter !== 'all' || dateFilter !== 'all') && (
+          {(searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all') && (
             <div className="flex items-center">
               <button
                 type="button"
                 onClick={() => {
                   setSearchTerm('');
                   setStatusFilter('all');
+                  setTypeFilter('all');
                   setDateFilter('all');
                   setCustomDate('');
                 }}
@@ -443,7 +464,18 @@ export const InvoicesPage: React.FC = () => {
                     >
                       {/* Invoice Number */}
                       <td className="py-3 px-4 font-mono font-bold text-navy-900">
-                        {inv.invoiceNumber}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{inv.invoiceNumber}</span>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                              inv.invoiceType === 'wholesale'
+                                ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}
+                          >
+                            {inv.invoiceType === 'wholesale' ? 'Wholesale' : 'Retail'}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Date */}

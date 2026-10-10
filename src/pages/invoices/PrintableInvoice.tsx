@@ -6,14 +6,18 @@ interface PrintableInvoiceProps {
   invoice: Invoice;
   id?: string;
   showSignatureLines?: boolean;
+  invoiceType?: 'retail' | 'wholesale';
 }
 
 export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({
   invoice,
   id = 'danix-printable-invoice',
   showSignatureLines = true,
+  invoiceType,
 }) => {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const activeType: 'retail' | 'wholesale' = invoiceType || invoice.invoiceType || 'retail';
+  const isWholesale = activeType === 'wholesale';
 
   useEffect(() => {
     // Generate QR code encoding verifiable invoice metadata
@@ -143,10 +147,27 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({
 
         {/* Right: Invoice Title & Meta */}
         <div className="text-right">
-          <div className="inline-block rounded-lg bg-navy-900 px-3 py-1 text-white">
-            <h2 className="text-base font-extrabold tracking-wider uppercase font-sans">
-              TAX INVOICE
-            </h2>
+          <div className="flex flex-col items-end gap-1">
+            <div
+              className={`inline-block rounded-lg px-3 py-1 text-white shadow-sm ${
+                isWholesale ? 'bg-sky-950 border border-sky-800' : 'bg-navy-900'
+              }`}
+            >
+              <h2 className="text-base font-extrabold tracking-wider uppercase font-sans">
+                {isWholesale ? 'COMMERCIAL WHOLESALE INVOICE' : 'RETAIL TAX INVOICE'}
+              </h2>
+            </div>
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <span
+                className={`rounded px-2 py-0.5 text-[9px] font-black tracking-widest uppercase ${
+                  isWholesale
+                    ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                    : 'bg-brand-50 text-brand-700 border border-brand-300'
+                }`}
+              >
+                {isWholesale ? 'WHOLESALE B2B SUPPLY' : 'RETAIL SALE'}
+              </span>
+            </div>
           </div>
           <div className="mt-2 space-y-1 text-xs">
             <p>
@@ -186,8 +207,12 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({
       <div className="grid grid-cols-2 gap-6 py-4 border-b border-slate-200">
         <div>
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-navy-900 mb-1.5 flex items-center gap-1">
-            <span className="inline-block w-1.5 h-3 bg-brand-500 rounded-sm"></span>
-            Billed To
+            <span
+              className={`inline-block w-1.5 h-3 rounded-sm ${
+                isWholesale ? 'bg-sky-600' : 'bg-brand-500'
+              }`}
+            ></span>
+            {isWholesale ? 'Commercial Buyer / Consignee' : 'Billed To'}
           </h3>
           <div className="rounded-lg bg-slate-50 p-3 border border-slate-200 text-xs space-y-1">
             <p className="font-bold text-sm text-slate-900">
@@ -256,8 +281,12 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({
               <th className="py-2.5 px-3 border border-navy-900 w-10 text-center font-bold">#</th>
               <th className="py-2.5 px-3 border border-navy-900 font-bold">Item Description</th>
               <th className="py-2.5 px-3 border border-navy-900 w-28 text-center font-bold">SKU</th>
-              <th className="py-2.5 px-3 border border-navy-900 w-16 text-center font-bold">Qty</th>
-              <th className="py-2.5 px-3 border border-navy-900 w-24 text-right font-bold">Unit (Rs.)</th>
+              <th className="py-2.5 px-3 border border-navy-900 w-16 text-center font-bold">
+                {isWholesale ? 'Bulk Qty' : 'Qty'}
+              </th>
+              <th className="py-2.5 px-3 border border-navy-900 w-24 text-right font-bold">
+                {isWholesale ? 'Wholesale (Rs.)' : 'Unit (Rs.)'}
+              </th>
               <th className="py-2.5 px-3 border border-navy-900 w-20 text-right font-bold">Disc.</th>
               <th className="py-2.5 px-3 border border-navy-900 w-28 text-right font-bold">Total (Rs.)</th>
             </tr>
@@ -409,17 +438,35 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({
       <div className="pt-4">
         {/* Terms and Return Policy */}
         <div className="text-[10px] text-slate-500 leading-normal mb-6">
-          <p className="font-semibold text-slate-700 mb-0.5">Terms & Return Policy:</p>
+          <p className="font-semibold text-slate-700 mb-0.5">
+            {isWholesale ? 'Commercial Wholesale Terms & Consignment Policy:' : 'Terms & Return Policy:'}
+          </p>
           <ul className="list-disc pl-4 space-y-0.5">
-            <li>
-              Goods once sold can only be exchanged within 7 days from delivery date with original tax invoice and undamaged packaging.
-            </li>
-            <li>
-              All electronic devices carry manufacturer or standard Danix warranty as indicated on individual warranty cards.
-            </li>
-            <li>
-              Perishable and food items (tea, spices, coconut oils) must be checked upon handover.
-            </li>
+            {isWholesale ? (
+              <>
+                <li>
+                  Goods supplied under commercial wholesale agreement. Claims for shortages or damages must be reported within 48 hours of dispatch.
+                </li>
+                <li>
+                  Title and risk of loss pass to consignee upon dispatch and acceptance of delivery consignment note.
+                </li>
+                <li>
+                  Wholesale rates are strictly net of settlement terms agreed in writing with Danix Lanka (Pvt) Ltd.
+                </li>
+              </>
+            ) : (
+              <>
+                <li>
+                  Goods once sold can only be exchanged within 7 days from delivery date with original tax invoice and undamaged packaging.
+                </li>
+                <li>
+                  All electronic devices carry manufacturer or standard Danix warranty as indicated on individual warranty cards.
+                </li>
+                <li>
+                  Perishable and food items (tea, spices, coconut oils) must be checked upon handover.
+                </li>
+              </>
+            )}
           </ul>
         </div>
 
@@ -428,14 +475,22 @@ export const PrintableInvoice: React.FC<PrintableInvoiceProps> = ({
           <div className="grid grid-cols-2 gap-16 pt-8 pb-4">
             <div className="text-center">
               <div className="border-t border-slate-400 mx-8 pt-1.5">
-                <p className="font-bold text-slate-900 text-[11px]">Authorized Signature</p>
-                <p className="text-[10px] text-slate-500">For DANIX LANKA (PVT) LTD</p>
+                <p className="font-bold text-slate-900 text-[11px]">
+                  {isWholesale ? 'Authorized Dispatch Officer' : 'Authorized Signature'}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  {isWholesale ? 'Danix Warehouse & Logistics' : 'For DANIX LANKA (PVT) LTD'}
+                </p>
               </div>
             </div>
             <div className="text-center">
               <div className="border-t border-slate-400 mx-8 pt-1.5">
-                <p className="font-bold text-slate-900 text-[11px]">Customer Acceptance</p>
-                <p className="text-[10px] text-slate-500">Received in good order & condition</p>
+                <p className="font-bold text-slate-900 text-[11px]">
+                  {isWholesale ? 'Consignee Acceptance & Seal' : 'Customer Acceptance'}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  {isWholesale ? 'Received & Verified in Good Order' : 'Received in good order & condition'}
+                </p>
               </div>
             </div>
           </div>

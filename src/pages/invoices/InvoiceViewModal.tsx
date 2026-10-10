@@ -28,6 +28,9 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
 }) => {
   const [zoomScale, setZoomScale] = useState<number>(0.95);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [invoiceFormat, setInvoiceFormat] = useState<'retail' | 'wholesale'>(
+    invoice?.invoiceType || 'retail'
+  );
   const printContainerRef = useRef<HTMLDivElement>(null);
   const { notifySuccess, notifyInfo } = useNotification();
 
@@ -35,7 +38,7 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
 
   // Print Handler
   const handlePrint = () => {
-    notifyInfo('Opening print dialog...', 'Print Invoice');
+    notifyInfo(`Opening ${invoiceFormat === 'wholesale' ? 'wholesale' : 'retail'} print dialog...`, 'Print Invoice');
 
     // Create a temporary print iframe or invoke window.print
     const printContent = document.getElementById('danix-modal-printable-invoice');
@@ -55,7 +58,7 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Invoice - ${invoice.invoiceNumber} - Danix.lk</title>
+          <title>${invoiceFormat === 'wholesale' ? 'Wholesale-Invoice' : 'Retail-Invoice'} - ${invoice.invoiceNumber} - Danix.lk</title>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -220,6 +223,34 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Retail vs Wholesale Invoice Format Selector */}
+            <div className="flex items-center rounded-xl border border-slate-800 bg-slate-900 p-0.5 text-xs font-semibold shadow-inner">
+              <button
+                type="button"
+                onClick={() => setInvoiceFormat('retail')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all ${
+                  invoiceFormat === 'retail'
+                    ? 'bg-brand-500 text-white shadow-sm font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Format as Retail Tax Invoice"
+              >
+                <span>🏷️ Retail</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvoiceFormat('wholesale')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all ${
+                  invoiceFormat === 'wholesale'
+                    ? 'bg-sky-600 text-white shadow-sm font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Format as Commercial Wholesale B2B Invoice"
+              >
+                <span>📦 Wholesale</span>
+              </button>
+            </div>
+
             {/* Zoom Controls */}
             <div className="hidden sm:flex items-center rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs text-slate-300">
               <button
@@ -311,6 +342,7 @@ export const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({
             <PrintableInvoice
               invoice={invoice}
               id="danix-modal-printable-invoice"
+              invoiceType={invoiceFormat}
             />
           </div>
         </div>

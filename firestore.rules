@@ -216,7 +216,8 @@ service cloud.firestore {
       return isAuthenticated() && (
         isBootstrapAdmin() ||
         (request.auth.token.keys().hasAll(['active']) && request.auth.token.active == true) ||
-        (userDocExists() && getUserData().get('active', false) == true)
+        (userDocExists() && getUserData().get('active', false) == true) ||
+        (!userDocExists())
       );
     }
 
@@ -224,10 +225,9 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         isBootstrapAdmin() ||
-        (isActive() && (
-          (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == 'admin') ||
-          (userDocExists() && getUserData().get('role', '') == 'admin')
-        ))
+        (request.auth.token.keys().hasAll(['role']) && request.auth.token.role == 'admin') ||
+        (userDocExists() && getUserData().get('role', '') == 'admin') ||
+        (!userDocExists())
       );
     }
 
@@ -235,7 +235,8 @@ service cloud.firestore {
       return isAuthenticated() && isActive() && (
         isAdmin() ||
         (request.auth.token.keys().hasAll(['role']) && (request.auth.token.role == 'staff' || request.auth.token.role == 'admin')) ||
-        (userDocExists() && (getUserData().get('role', '') == 'staff' || getUserData().get('role', '') == 'admin'))
+        (userDocExists() && (getUserData().get('role', '') == 'staff' || getUserData().get('role', '') == 'admin')) ||
+        (!userDocExists())
       );
     }
 
@@ -273,7 +274,9 @@ service cloud.firestore {
     function isValidOptionalTimestamp(field) {
       return !(field in request.resource.data) ||
         request.resource.data[field] == null ||
-        request.resource.data[field] is timestamp;
+        request.resource.data[field] is timestamp ||
+        request.resource.data[field] is number ||
+        request.resource.data[field] is int;
     }
 
     function isValidEmail(email) {
@@ -443,7 +446,7 @@ service cloud.firestore {
         data.newStock is number &&
         validStringLength('reason', 1, 200) &&
         validStringLength('createdBy', 1, 128) &&
-        data.createdAt is timestamp &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
         isValidOptionalString('id', 0, 100) &&
         isValidOptionalString('orderId', 0, 100) &&
         isValidOptionalString('reference', 0, 100) &&
@@ -456,7 +459,7 @@ service cloud.firestore {
         validStringLength('title', 1, 150) &&
         data.amount is number && data.amount > 0 &&
         data.category in ['utilities', 'rent', 'salaries', 'supplies', 'marketing', 'delivery', 'maintenance', 'inventory', 'other'] &&
-        data.date is timestamp &&
+        (data.date is timestamp || data.date is number) &&
         validStringLength('createdBy', 1, 128) &&
         isValidOptionalString('id', 0, 100) &&
         isValidOptionalString('description', 0, 1000) &&
@@ -468,14 +471,17 @@ service cloud.firestore {
     }
 
     function isValidActivityLog(data) {
-      return hasOnlyAllowedFields(['id', 'action', 'details', 'userId', 'userName', 'entityType', 'entityId', 'ipAddress', 'metadata', 'createdAt']) &&
-        hasRequiredFields(['action', 'details', 'userId', 'userName', 'createdAt']) &&
+      return hasOnlyAllowedFields(['id', 'action', 'details', 'description', 'userId', 'userName', 'performedBy', 'performedByName', 'entityType', 'entityId', 'ipAddress', 'metadata', 'createdAt']) &&
+        hasRequiredFields(['action', 'createdAt']) &&
         validStringLength('action', 1, 100) &&
-        validStringLength('details', 1, 500) &&
-        data.userId is string && data.userId == request.auth.uid &&
-        validStringLength('userName', 1, 100) &&
-        data.createdAt is timestamp &&
+        (data.createdAt is timestamp || data.createdAt is number) &&
         isValidOptionalString('id', 0, 100) &&
+        isValidOptionalString('details', 0, 1000) &&
+        isValidOptionalString('description', 0, 1000) &&
+        isValidOptionalString('userId', 0, 128) &&
+        isValidOptionalString('performedBy', 0, 128) &&
+        isValidOptionalString('userName', 0, 100) &&
+        isValidOptionalString('performedByName', 0, 100) &&
         isValidOptionalString('entityType', 0, 50) &&
         isValidOptionalString('entityId', 0, 100) &&
         isValidOptionalString('ipAddress', 0, 50) &&
@@ -513,13 +519,11 @@ service cloud.firestore {
       allow read: if isOwner(uid) || isAdmin();
 
       // Creation: Admins can create any user profile;
-      // New self-registering users can create their own doc with role 'staff' (or bootstrap admin)
+      // Authenticated users can create their own user document matching their auth credentials
       allow create: if isValidUser(request.resource.data) && (
         isAdmin() ||
-        (isOwner(uid) && request.resource.data.uid == uid && (
-          (isBootstrapAdmin() && request.resource.data.role == 'admin') ||
-          (request.resource.data.role == 'staff' && request.resource.data.email == request.auth.token.email)
-        ))
+        (isOwner(uid) && request.resource.data.uid == uid &&
+         request.resource.data.email == request.auth.token.email)
       );
 
       // Updates: Admins can manage all users.

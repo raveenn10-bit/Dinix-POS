@@ -123,6 +123,7 @@ export interface Invoice {
   dueDate?: string | number;
   paymentStatus: PaymentStatus;
   paymentMethod?: PaymentMethod;
+  invoiceType?: 'retail' | 'wholesale';
   notes?: string;
   createdBy: string;
   createdAt: string | number;
