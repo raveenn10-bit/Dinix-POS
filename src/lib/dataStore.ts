@@ -1047,7 +1047,277 @@ export function useOrders() {
     }
   };
 
-  return { orders, loading, error, refresh: fetchOrders, saveOrder, updateOrderStatus };
+  const hookDeleteOrder = async (
+    orderId: string,
+    user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+  ): Promise<void> => {
+    await deleteOrder(orderId, user);
+    setOrders((curr) => curr.filter((o) => o.id !== orderId));
+  };
+
+  const hookClearAllOrders = async (
+    user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+  ): Promise<void> => {
+    await clearAllOrders(user);
+    setOrders([]);
+  };
+
+  return {
+    orders,
+    loading,
+    error,
+    refresh: fetchOrders,
+    saveOrder,
+    updateOrderStatus,
+    deleteOrder: hookDeleteOrder,
+    clearAllOrders: hookClearAllOrders,
+  };
+}
+
+/**
+ * Standalone module-level export for deleting orders with local-first optimistic update & Firestore sync.
+ * Also removes any linked invoice and delivery records from memory, local storage, and Firestore.
+ */
+export async function deleteOrder(
+  orderId: string,
+  user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+): Promise<void> {
+  // 1. Find target order
+  const storedOrders: Order[] = JSON.parse(
+    localStorage.getItem(STORAGE_KEYS.ORDERS) || '[]'
+  );
+  const targetOrder =
+    ordersStore.getLive()?.find((o) => o.id === orderId) ||
+    storedOrders.find((o) => o.id === orderId);
+  const orderNumber = targetOrder?.orderNumber;
+
+  // 2. Remove order from localStorage and in-memory store
+  const filteredOrders = storedOrders.filter((o) => o.id !== orderId);
+  localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(filteredOrders));
+  try {
+    localStorage.setItem('danix_pos_orders', JSON.stringify(filteredOrders));
+  } catch {}
+  ordersStore.updateMemory((curr) => curr.filter((o) => o.id !== orderId));
+
+  // 3. Remove linked invoice from local storage and in-memory store
+  const storedInvoices: Invoice[] = JSON.parse(
+    localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]'
+  );
+  const linkedInvoices = storedInvoices.filter(
+    (inv) => inv.orderId === orderId || (orderNumber && inv.orderNumber === orderNumber)
+  );
+  const filteredInvoices = storedInvoices.filter(
+    (inv) => inv.orderId !== orderId && (!orderNumber || inv.orderNumber !== orderNumber)
+  );
+  localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(filteredInvoices));
+  try {
+    localStorage.setItem('danix_pos_invoices', JSON.stringify(filteredInvoices));
+  } catch {}
+  invoicesStore.updateMemory((curr) =>
+    curr.filter(
+      (inv) => inv.orderId !== orderId && (!orderNumber || inv.orderNumber !== orderNumber)
+    )
+  );
+
+  // 4. Remove any linked delivery from local storage and in-memory store
+  const storedDeliveries: Delivery[] = JSON.parse(
+    localStorage.getItem(STORAGE_KEYS.DELIVERIES) || '[]'
+  );
+  const linkedDeliveries = storedDeliveries.filter(
+    (del) => del.orderId === orderId || (orderNumber && del.orderNumber === orderNumber)
+  );
+  const filteredDeliveries = storedDeliveries.filter(
+    (del) => del.orderId !== orderId && (!orderNumber || del.orderNumber !== orderNumber)
+  );
+  localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(filteredDeliveries));
+  try {
+    localStorage.setItem('danix_pos_deliveries', JSON.stringify(filteredDeliveries));
+  } catch {}
+  deliveriesStore.updateMemory((curr) =>
+    curr.filter(
+      (del) => del.orderId !== orderId && (!orderNumber || del.orderNumber !== orderNumber)
+    )
+  );
+
+  invalidateDataCache('orders');
+  invalidateDataCache('deliveries');
+
+  // 5. Cloud Firestore sync
+  if (isFirebaseConfigured) {
+    try {
+      await deleteDoc(doc(db, 'orders', orderId));
+
+      for (const inv of linkedInvoices) {
+        try {
+          await deleteDoc(doc(db, 'invoices', inv.id));
+        } catch (e) {
+          console.warn(`[Firestore Sync] Failed to delete linked invoice ${inv.id}:`, e);
+        }
+      }
+
+      for (const del of linkedDeliveries) {
+        try {
+          await deleteDoc(doc(db, 'deliveries', del.id));
+        } catch (e) {
+          console.warn(`[Firestore Sync] Failed to delete linked delivery ${del.id}:`, e);
+        }
+      }
+
+      await logActivity(
+        'DELETE_ORDER',
+        'order',
+        orderId,
+        `Deleted order #${orderNumber || orderId} and associated invoice records`,
+        user
+      );
+    } catch (fbErr) {
+      console.warn('[Firestore Sync] Order deletion deferred to local storage:', fbErr);
+    }
+  } else {
+    logActivity(
+      'DELETE_ORDER',
+      'order',
+      orderId,
+      `Deleted order #${orderNumber || orderId} and associated invoice records`,
+      user
+    );
+  }
+}
+
+/**
+ * Standalone module-level export to clear all orders, invoices, and associated delivery records.
+ * Empties localStorage, in-memory live stores, and wipes Firestore collections if configured.
+ * Resets atomic invoice counters.
+ */
+export async function clearAllOrders(
+  user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+): Promise<void> {
+  // 1. Wipe local storage
+  localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify([]));
+  try {
+    localStorage.setItem('danix_pos_orders', JSON.stringify([]));
+    localStorage.setItem('danix_pos_invoices', JSON.stringify([]));
+    localStorage.setItem('danix_pos_deliveries', JSON.stringify([]));
+    localStorage.removeItem('danix_counter_INV');
+    localStorage.removeItem('danix_counter_WS');
+    localStorage.removeItem('danix_counter_RETAIL');
+  } catch {}
+
+  // 2. Wipe in-memory stores
+  ordersStore.updateMemory(() => []);
+  invoicesStore.updateMemory(() => []);
+  deliveriesStore.updateMemory(() => []);
+
+  invalidateDataCache('orders');
+  invalidateDataCache('deliveries');
+
+  // 3. Firestore sync
+  if (isFirebaseConfigured) {
+    try {
+      const [ordersSnap, invoicesSnap, deliveriesSnap] = await Promise.all([
+        getDocs(ordersCol),
+        getDocs(invoicesCol),
+        getDocs(deliveriesCol),
+      ]);
+
+      const deletePromises = [
+        ...ordersSnap.docs.map((d) => deleteDoc(doc(db, 'orders', d.id))),
+        ...invoicesSnap.docs.map((d) => deleteDoc(doc(db, 'invoices', d.id))),
+        ...deliveriesSnap.docs.map((d) => deleteDoc(doc(db, 'deliveries', d.id))),
+      ];
+      await Promise.all(deletePromises);
+
+      // Reset invoice counters in settings if counter doc exists
+      try {
+        await setDoc(
+          doc(db, 'settings', 'counters'),
+          { invoice_INV: 0, invoice_WS: 0, invoiceCount: 0, updatedAt: Date.now() },
+          { merge: true }
+        );
+      } catch (cntErr) {
+        console.warn('[Firestore Sync] Counter reset error:', cntErr);
+      }
+
+      await logActivity(
+        'CLEAR_ALL_ORDERS',
+        'order',
+        'all_orders',
+        'Cleared all orders, invoices, and deliveries (test data cleanup)',
+        user
+      );
+    } catch (fbErr) {
+      console.warn('[Firestore Sync] Clear all orders deferred to local storage:', fbErr);
+    }
+  } else {
+    logActivity(
+      'CLEAR_ALL_ORDERS',
+      'order',
+      'all_orders',
+      'Cleared all orders, invoices, and deliveries (test data cleanup)',
+      user
+    );
+  }
+}
+
+/**
+ * Standalone module-level export to reset demo data (products, categories, stock, customers)
+ */
+export async function resetDemoData(
+  user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
+): Promise<void> {
+  // 1. Reset localStorage keys
+  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+  localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_PREDEFINED_CATEGORIES));
+  localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
+  localStorage.setItem(STORAGE_KEYS.STOCK_MOVEMENTS, JSON.stringify(INITIAL_STOCK_MOVEMENTS));
+
+  try {
+    localStorage.setItem('danix_pos_products', JSON.stringify(INITIAL_PRODUCTS));
+    localStorage.setItem('danix_pos_customers', JSON.stringify(INITIAL_CUSTOMERS));
+    localStorage.setItem('danix_pos_stock_movements', JSON.stringify(INITIAL_STOCK_MOVEMENTS));
+  } catch {}
+
+  // 2. Reset memory stores
+  productsStore.updateMemory(() => INITIAL_PRODUCTS);
+  categoriesStore.updateMemory(() => DEFAULT_PREDEFINED_CATEGORIES);
+  customersStore.updateMemory(() => INITIAL_CUSTOMERS);
+  stockMovementsStore.updateMemory(() => INITIAL_STOCK_MOVEMENTS);
+
+  invalidateDataCache('all');
+
+  // 3. Firestore sync if configured
+  if (isFirebaseConfigured) {
+    try {
+      for (const prod of INITIAL_PRODUCTS) {
+        await setDoc(doc(db, 'products', prod.id), sanitizeForFirestore(prod));
+      }
+      for (const cat of DEFAULT_PREDEFINED_CATEGORIES) {
+        await setDoc(doc(db, 'categories', cat.id), sanitizeForFirestore(cat));
+      }
+      for (const cust of INITIAL_CUSTOMERS) {
+        await setDoc(doc(db, 'customers', cust.id), sanitizeForFirestore(cust));
+      }
+      await logActivity(
+        'RESET_DEMO_DATA',
+        'settings',
+        'demo_reset',
+        'Reset catalog, categories, customers, and stock movements to initial demo dataset',
+        user
+      );
+    } catch (fbErr) {
+      console.warn('[Firestore Sync] Reset demo data sync warning:', fbErr);
+    }
+  } else {
+    logActivity(
+      'RESET_DEMO_DATA',
+      'settings',
+      'demo_reset',
+      'Reset catalog, categories, customers, and stock movements to initial demo dataset',
+      user
+    );
+  }
 }
 
 // ----------------------------------------------------

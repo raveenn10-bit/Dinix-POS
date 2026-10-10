@@ -17,6 +17,7 @@ import {
   Banknote,
   DollarSign,
   Download,
+  Trash2,
 } from 'lucide-react';
 import { Order, OrderStatus } from '@/types';
 import { useOrders } from '@/lib/dataStore';
@@ -34,15 +35,20 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   onNavigateToInvoice,
   onNavigateToDelivery,
 }) => {
-  const { orders, loading, updateOrderStatus, refresh } = useOrders();
-  const { userProfile } = useAuth();
-  const { notifySuccess, notifyInfo } = useNotification();
+  const { orders, loading, updateOrderStatus, refresh, deleteOrder, clearAllOrders } = useOrders();
+  const { userProfile, isAdmin } = useAuth();
+  const { notifySuccess, notifyError, notifyInfo } = useNotification();
 
   // Mode: List View or Create Order View
   const [viewMode, setViewMode] = useState<'list' | 'create'>('list');
 
   // Search & Status Tab State
   const [searchQuery, setSearchQuery] = useState('');
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [isDeletingOrder, setIsDeletingOrder] = useState<boolean>(false);
+  const [showClearAllModal, setShowClearAllModal] = useState<boolean>(false);
+  const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
+  const [clearConfirmText, setClearConfirmText] = useState<string>('');
   const [activeStatusTab, setActiveStatusTab] = useState<string>('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'retail' | 'wholesale'>('all');
 
@@ -205,6 +211,19 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
           >
             <Download className="h-4 w-4" />
             <span>Export CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setClearConfirmText('');
+              setShowClearAllModal(true);
+            }}
+            title="Clear all test orders and invoices"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/80 px-3.5 py-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors shadow-sm cursor-pointer"
+          >
+            <Trash2 className="h-4 w-4 text-rose-600" />
+            <span>Clear Orders</span>
           </button>
 
           <button
@@ -499,6 +518,16 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
                           >
                             <Truck className="h-3.5 w-3.5" />
                           </button>
+
+                          {/* Delete Order Action */}
+                          <button
+                            type="button"
+                            onClick={() => setOrderToDelete(o)}
+                            title="Delete Order"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -522,9 +551,141 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
             });
             await refresh();
           }}
+          onDeleteOrder={async (orderId) => {
+            await deleteOrder(orderId, {
+              uid: userProfile?.uid || 'user',
+              name: userProfile?.name || 'Danix User',
+            });
+            setSelectedOrder(null);
+            await refresh();
+          }}
           onGenerateInvoice={onNavigateToInvoice}
           onDispatchDelivery={onNavigateToDelivery}
         />
+      )}
+
+      {/* Delete Single Order Confirmation Modal */}
+      {orderToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/80 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-3">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h3 className="text-base font-bold text-navy-900">
+              Delete Order #{orderToDelete.orderNumber}?
+            </h3>
+            <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+              Are you sure you want to permanently delete order <strong>#{orderToDelete.orderNumber}</strong> for {orderToDelete.customerName}?
+              This will remove the order and its linked invoices from local storage and cloud database.
+              This action cannot be undone.
+            </p>
+
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                disabled={isDeletingOrder}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsDeletingOrder(true);
+                  try {
+                    await deleteOrder(orderToDelete.id, {
+                      uid: userProfile?.uid || 'user',
+                      name: userProfile?.name || 'Danix User',
+                    });
+                    notifySuccess(`Order #${orderToDelete.orderNumber} deleted successfully.`);
+                    setOrderToDelete(null);
+                    await refresh();
+                  } catch (err) {
+                    notifyError((err as Error).message || 'Failed to delete order');
+                  } finally {
+                    setIsDeletingOrder(false);
+                  }
+                }}
+                disabled={isDeletingOrder}
+                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-md shadow-rose-600/30 disabled:opacity-50"
+              >
+                {isDeletingOrder ? 'Deleting...' : 'Yes, Delete Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Orders Confirmation Modal */}
+      {showClearAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/80 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-3">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <h3 className="text-base font-bold text-rose-950">
+              Clear All Orders & Invoices?
+            </h3>
+            <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+              This will permanently wipe all <strong>{orders.length}</strong> logged orders, linked invoices, and deliveries from local storage and cloud database to reset test transactions.
+            </p>
+            <div className="mt-4 text-left">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Type <span className="font-mono font-bold text-rose-600">CLEAR</span> to confirm:
+              </label>
+              <input
+                type="text"
+                value={clearConfirmText}
+                onChange={(e) => setClearConfirmText(e.target.value)}
+                placeholder="CLEAR"
+                className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono uppercase tracking-widest text-slate-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowClearAllModal(false);
+                  setClearConfirmText('');
+                }}
+                disabled={isClearingAll}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (clearConfirmText.trim().toUpperCase() !== 'CLEAR') {
+                    notifyError('Please type CLEAR in capital letters to confirm.');
+                    return;
+                  }
+                  setIsClearingAll(true);
+                  try {
+                    await clearAllOrders({
+                      uid: userProfile?.uid || 'user',
+                      name: userProfile?.name || 'Danix Admin',
+                    });
+                    notifySuccess('All test orders and invoices cleared successfully.');
+                    setShowClearAllModal(false);
+                    setClearConfirmText('');
+                    await refresh();
+                  } catch (err) {
+                    notifyError((err as Error).message || 'Failed to clear orders');
+                  } finally {
+                    setIsClearingAll(false);
+                  }
+                }}
+                disabled={clearConfirmText.trim().toUpperCase() !== 'CLEAR' || isClearingAll}
+                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-md shadow-rose-600/30 disabled:opacity-40"
+              >
+                {isClearingAll ? 'Clearing...' : 'Wipe All Orders'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

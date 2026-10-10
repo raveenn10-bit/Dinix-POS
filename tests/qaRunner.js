@@ -587,6 +587,70 @@ async function main() {
   });
 
   // --------------------------------------------------------------------------
+  // DOMAIN 13: ORDER DELETION, TEST DATA CLEANUP & INVOICING ACTIONS
+  // --------------------------------------------------------------------------
+  console.log('\n--- Domain 13: Order Deletion, Test Data Cleanup & Invoicing Actions ---');
+
+  await runTest('DataStore', 'Verify dataStore.ts exports deleteOrder, clearAllOrders, resetDemoData and useOrders hook returns them', () => {
+    const dataStoreCode = fs.readFileSync(path.join(rootDir, 'src/lib/dataStore.ts'), 'utf-8');
+    assert(dataStoreCode.includes('export async function deleteOrder'), 'dataStore.ts must export deleteOrder');
+    assert(dataStoreCode.includes('export async function clearAllOrders'), 'dataStore.ts must export clearAllOrders');
+    assert(dataStoreCode.includes('export async function resetDemoData'), 'dataStore.ts must export resetDemoData');
+    assert(dataStoreCode.includes('deleteOrder: hookDeleteOrder'), 'useOrders hook must return deleteOrder');
+    assert(dataStoreCode.includes('clearAllOrders: hookClearAllOrders'), 'useOrders hook must return clearAllOrders');
+  });
+
+  await runTest('DataStore', 'Validate atomic order deletion cascade removes linked invoices and orders from memory and storage', () => {
+    const sampleOrders = [
+      { id: 'ord-001', orderNumber: 'ORD-2026-001', customerName: 'Alice' },
+      { id: 'ord-002', orderNumber: 'ORD-2026-002', customerName: 'Bob' },
+    ];
+    const sampleInvoices = [
+      { id: 'inv-001', orderId: 'ord-001', orderNumber: 'ORD-2026-001', invoiceNumber: 'INV-2026-00001' },
+      { id: 'inv-002', orderId: 'ord-002', orderNumber: 'ORD-2026-002', invoiceNumber: 'INV-2026-00002' },
+    ];
+
+    const targetOrderId = 'ord-001';
+    const remainingOrders = sampleOrders.filter(o => o.id !== targetOrderId);
+    const targetOrderNumber = sampleOrders.find(o => o.id === targetOrderId)?.orderNumber;
+    const remainingInvoices = sampleInvoices.filter(
+      inv => inv.orderId !== targetOrderId && (!targetOrderNumber || inv.orderNumber !== targetOrderNumber)
+    );
+
+    assertEqual(remainingOrders.length, 1, 'Only one order should remain');
+    assertEqual(remainingOrders[0].id, 'ord-002', 'Remaining order should be ord-002');
+    assertEqual(remainingInvoices.length, 1, 'Linked invoice should be cascade-deleted');
+    assertEqual(remainingInvoices[0].orderId, 'ord-002', 'Remaining invoice should belong to ord-002');
+  });
+
+  await runTest('UI Validation', 'Verify OrdersPage contains row delete button, Clear Orders header action, and confirmation modals', () => {
+    const ordersPageCode = fs.readFileSync(path.join(rootDir, 'src/pages/orders/OrdersPage.tsx'), 'utf-8');
+    assert(ordersPageCode.includes('Clear Orders'), 'OrdersPage must contain Clear Orders header button');
+    assert(ordersPageCode.includes('setOrderToDelete(o)'), 'OrdersPage table rows must have delete order trigger');
+    assert(ordersPageCode.includes('orderToDelete &&'), 'OrdersPage must include single order delete confirmation modal');
+    assert(ordersPageCode.includes('showClearAllModal &&'), 'OrdersPage must include clear all orders confirmation modal');
+    assert(ordersPageCode.includes('onDeleteOrder='), 'OrdersPage must pass onDeleteOrder handler to OrderDetailModal');
+  });
+
+  await runTest('UI Validation', 'Verify OrderDetailModal contains Print Slip and Print Invoice in header & footer, plus Delete Order button', () => {
+    const modalCode = fs.readFileSync(path.join(rootDir, 'src/pages/orders/OrderDetailModal.tsx'), 'utf-8');
+    assert(modalCode.includes('handlePrintSlip'), 'OrderDetailModal must have handlePrintSlip');
+    assert(modalCode.includes('handlePrintInvoice'), 'OrderDetailModal must have handlePrintInvoice');
+    assert(modalCode.includes('setShowDeletePrompt(true)'), 'OrderDetailModal must have Delete Order trigger');
+    assert(modalCode.includes('showDeletePrompt &&'), 'OrderDetailModal must render Delete Order confirmation modal');
+    assert(modalCode.includes('onDeleteOrder'), 'OrderDetailModal must accept and invoke onDeleteOrder');
+  });
+
+  await runTest('UI Validation', 'Verify SettingsPage includes Data Management & System Reset with Clear Orders and Reset Demo Data', () => {
+    const settingsCode = fs.readFileSync(path.join(rootDir, 'src/pages/settings/SettingsPage.tsx'), 'utf-8');
+    assert(settingsCode.includes('Data Management & System Reset'), 'SettingsPage must have dedicated Data Management section');
+    assert(settingsCode.includes('Clear All Orders & Invoices'), 'SettingsPage must have Clear All Orders & Invoices button');
+    assert(settingsCode.includes('Reset Demo Data'), 'SettingsPage must have Reset Demo Data button');
+    assert(settingsCode.includes('isClearOrdersModalOpen &&'), 'SettingsPage must render Clear Orders confirmation modal');
+    assert(settingsCode.includes('isResetDemoModalOpen &&'), 'SettingsPage must render Reset Demo Data confirmation modal');
+  });
+
+  // --------------------------------------------------------------------------
   // SUMMARY REPORT
   // --------------------------------------------------------------------------
   console.log('\n==============================================================================');

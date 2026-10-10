@@ -18,10 +18,13 @@ import {
   RotateCcw,
   X,
   AlertCircle,
+  Database,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
 import { fetchBusinessSettings, saveBusinessSettings, clearAllSystemData } from '@/lib/dataService';
+import { clearAllOrders, resetDemoData } from '@/lib/dataStore';
 import { BusinessSettings } from '@/types';
 
 export const SettingsPage: React.FC = () => {
@@ -64,6 +67,64 @@ export const SettingsPage: React.FC = () => {
   const [clearCustomers, setClearCustomers] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+
+  // Clear Orders & Invoices States
+  const [isClearOrdersModalOpen, setIsClearOrdersModalOpen] = useState(false);
+  const [clearOrdersConfirmText, setClearOrdersConfirmText] = useState('');
+  const [isClearingOrders, setIsClearingOrders] = useState(false);
+
+  // Reset Demo Data States
+  const [isResetDemoModalOpen, setIsResetDemoModalOpen] = useState(false);
+  const [resetDemoConfirmText, setResetDemoConfirmText] = useState('');
+  const [isResettingDemo, setIsResettingDemo] = useState(false);
+
+  const handleExecuteClearOrders = async () => {
+    if (clearOrdersConfirmText.trim().toUpperCase() !== 'CLEAR') {
+      notifyError('Please type CLEAR in capital letters to confirm.');
+      return;
+    }
+    if (!userProfile) return;
+
+    setIsClearingOrders(true);
+    try {
+      await clearAllOrders({
+        uid: userProfile.uid,
+        name: userProfile.name,
+      });
+      notifySuccess('All orders, invoices, and counters have been cleared successfully!', 'Orders Cleared');
+      setIsClearOrdersModalOpen(false);
+      setClearOrdersConfirmText('');
+    } catch (err) {
+      console.error(err);
+      notifyError('Failed to clear orders and invoices.', 'Error');
+    } finally {
+      setIsClearingOrders(false);
+    }
+  };
+
+  const handleExecuteResetDemo = async () => {
+    if (resetDemoConfirmText.trim().toUpperCase() !== 'RESET') {
+      notifyError('Please type RESET in capital letters to confirm.');
+      return;
+    }
+    if (!userProfile) return;
+
+    setIsResettingDemo(true);
+    try {
+      await resetDemoData({
+        uid: userProfile.uid,
+        name: userProfile.name,
+      });
+      notifySuccess('Demo catalog, categories, and stock reset successfully!', 'Demo Data Restored');
+      setIsResetDemoModalOpen(false);
+      setResetDemoConfirmText('');
+    } catch (err) {
+      console.error(err);
+      notifyError('Failed to reset demo data.', 'Error');
+    } finally {
+      setIsResettingDemo(false);
+    }
+  };
 
   const handleExecuteReset = async () => {
     if (confirmInput.trim().toUpperCase() !== 'RESET') {
@@ -433,20 +494,78 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Danger Zone: System Data Clear / Factory Reset */}
-        {isAdmin && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
-                  <AlertTriangle className="h-5 w-5" />
+        {/* SECTION 4: Data Management & System Reset */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2.5 border-b border-slate-100 pb-4 mb-5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+              <Database className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-navy-950">Data Management & System Reset</h2>
+              <p className="text-[11px] text-slate-500">
+                Safely wipe test transactions, clear orders & invoice counters, or reset the catalog to demo data
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Card 1: Clear All Orders & Invoices */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4.5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <FileText className="h-4 w-4 text-amber-600" />
+                  <h4 className="text-xs font-bold text-navy-900">Clear All Orders & Invoices</h4>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-rose-950">Danger Zone: System Factory Reset</h4>
-                  <p className="text-xs text-rose-700/80 mt-0.5">
-                    Clear test orders, invoices, deliveries, and stock movement logs to start with a fresh clean slate.
-                  </p>
+                <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
+                  Wipes all test orders, linked invoices, and delivery dispatches. Resets invoice numbering counters back to initial baseline without deleting your product catalog.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setClearOrdersConfirmText('');
+                  setIsClearOrdersModalOpen(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-bold text-amber-700 hover:bg-amber-600 hover:text-white transition-all shadow-sm cursor-pointer w-full sm:w-auto self-start"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Clear All Orders & Invoices</span>
+              </button>
+            </div>
+
+            {/* Card 2: Reset Demo Catalog & Stock */}
+            <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-4.5 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <RotateCcw className="h-4 w-4 text-sky-600" />
+                  <h4 className="text-xs font-bold text-navy-900">Reset Demo Data & Catalog</h4>
                 </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed mb-4">
+                  Restores default sample electronics, spices, categories, and initial warehouse stock levels. Ideal for testing POS features or preparing a clean demo.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetDemoConfirmText('');
+                  setIsResetDemoModalOpen(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-300 bg-white px-4 py-2 text-xs font-bold text-sky-700 hover:bg-sky-600 hover:text-white transition-all shadow-sm cursor-pointer w-full sm:w-auto self-start"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>Reset Demo Data</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Full Granular Factory Reset link for Admins */}
+          {isAdmin && (
+            <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0" />
+                <span className="text-xs text-slate-600">
+                  Need a full granular purge of custom datasets (transactions, products, customers)?
+                </span>
               </div>
               <button
                 type="button"
@@ -454,14 +573,14 @@ export const SettingsPage: React.FC = () => {
                   setConfirmInput('');
                   setIsResetModalOpen(true);
                 }}
-                className="inline-flex items-center gap-2 rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-xs font-bold text-rose-600 shadow-sm hover:bg-rose-600 hover:text-white transition-all cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
               >
-                <Trash2 className="h-4 w-4" />
-                <span>Reset & Clear POS Data</span>
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Advanced Factory Reset Options</span>
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Save Bar */}
         <div className="flex items-center justify-end gap-3 pt-2">
@@ -573,6 +692,123 @@ export const SettingsPage: React.FC = () => {
                   className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-40 transition-colors cursor-pointer"
                 >
                   {isResetting ? 'Wiping Data...' : 'Wipe Selected Data'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Orders & Invoices Modal */}
+      {isClearOrdersModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/70 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-amber-100 bg-amber-50 px-6 py-4">
+              <div className="flex items-center gap-2.5 text-amber-800">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                <h3 className="text-base font-bold text-amber-950">Clear All Orders & Invoices</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClearOrdersModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-amber-100 hover:text-amber-900 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                This will delete all orders, invoices, and delivery tracking records, and reset the sequential invoice counters.
+                <strong className="text-slate-900 block mt-1 font-semibold">Your product catalog, categories, and customer records will NOT be affected.</strong>
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Type <span className="font-mono font-bold text-amber-700">CLEAR</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={clearOrdersConfirmText}
+                  onChange={(e) => setClearOrdersConfirmText(e.target.value)}
+                  placeholder="CLEAR"
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono uppercase tracking-widest text-slate-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsClearOrdersModalOpen(false)}
+                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteClearOrders}
+                  disabled={clearOrdersConfirmText.trim().toUpperCase() !== 'CLEAR' || isClearingOrders}
+                  className="flex-1 rounded-xl bg-amber-600 py-2.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-40 transition-colors cursor-pointer"
+                >
+                  {isClearingOrders ? 'Clearing...' : 'Clear All Orders'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Demo Data Modal */}
+      {isResetDemoModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/70 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-sky-100 bg-sky-50 px-6 py-4">
+              <div className="flex items-center gap-2.5 text-sky-800">
+                <RotateCcw className="h-5 w-5 text-sky-600" />
+                <h3 className="text-base font-bold text-sky-950">Reset Demo Data</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResetDemoModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-sky-100 hover:text-sky-900 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                This will reset your products, categories, sample customers, and stock ledger entries back to the original Danix demo dataset.
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Type <span className="font-mono font-bold text-sky-700">RESET</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={resetDemoConfirmText}
+                  onChange={(e) => setResetDemoConfirmText(e.target.value)}
+                  placeholder="RESET"
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-mono uppercase tracking-widest text-slate-900 focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResetDemoModalOpen(false)}
+                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteResetDemo}
+                  disabled={resetDemoConfirmText.trim().toUpperCase() !== 'RESET' || isResettingDemo}
+                  className="flex-1 rounded-xl bg-sky-600 py-2.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-40 transition-colors cursor-pointer"
+                >
+                  {isResettingDemo ? 'Resetting...' : 'Reset Demo Data'}
                 </button>
               </div>
             </div>

@@ -19,12 +19,12 @@ import {
   DollarSign,
   ArrowRight,
   ShieldAlert,
+  Trash2,
 } from 'lucide-react';
 import { Order, OrderStatus, PaymentStatus } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { useNotification } from '@/context/NotificationContext';
-import { generateNextInvoiceNumber } from '@/lib/firebase/firestore';
-import { printOrderReceipt } from '@/lib/printUtils';
+import { printOrderReceipt, printA4InvoiceDocument } from '@/lib/printUtils';
 
 interface OrderDetailModalProps {
   order: Order;
@@ -32,6 +32,7 @@ interface OrderDetailModalProps {
   onUpdateStatus: (orderId: string, status: OrderStatus) => Promise<void>;
   onGenerateInvoice?: (order: Order) => void;
   onDispatchDelivery?: (order: Order) => void;
+  onDeleteOrder?: (orderId: string) => Promise<void> | void;
 }
 
 const ORDER_STATUS_STEPS: OrderStatus[] = [
@@ -48,6 +49,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   onUpdateStatus,
   onGenerateInvoice,
   onDispatchDelivery,
+  onDeleteOrder,
 }) => {
   const { userProfile } = useAuth();
   const { notifySuccess, notifyError, notifyInfo } = useNotification();
@@ -55,6 +57,24 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<OrderStatus>(order.orderStatus);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState<boolean>(false);
+  const [showDeletePrompt, setShowDeletePrompt] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      if (onDeleteOrder) {
+        await onDeleteOrder(order.id);
+      }
+      notifySuccess(`Order #${order.orderNumber} deleted successfully`);
+      setShowDeletePrompt(false);
+      onClose();
+    } catch (err) {
+      notifyError((err as Error).message || 'Failed to delete order');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleStatusChange = async (newStatus: OrderStatus) => {
     if (newStatus === order.orderStatus) return;
@@ -99,6 +119,19 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
       onError: (err) => {
         console.error('Print receipt slip error:', err);
         notifyError('Failed to trigger printer for receipt slip.');
+      },
+    });
+  };
+
+  const handlePrintInvoice = () => {
+    printA4InvoiceDocument(order, {
+      title: `Invoice - ${order.orderNumber}`,
+      onComplete: () => {
+        notifySuccess(`Order #${order.orderNumber} official A4 invoice sent to printer`);
+      },
+      onError: (err) => {
+        console.error('Print invoice error:', err);
+        notifyError('Failed to trigger printer for invoice.');
       },
     });
   };
@@ -159,15 +192,36 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
             <button
               type="button"
               onClick={handlePrintSlip}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-navy-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-navy-700 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-navy-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-navy-700 transition-colors shadow-sm"
+              title="Print Thermal / POS Slip Receipt"
             >
-              <Printer className="h-3.5 w-3.5" />
+              <Printer className="h-3.5 w-3.5 text-brand-400" />
               <span>Print Slip</span>
             </button>
             <button
               type="button"
+              onClick={handlePrintInvoice}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 hover:bg-brand-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors"
+              title="Print Full Official A4 Tax / Wholesale Invoice"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Print Invoice</span>
+            </button>
+            {onDeleteOrder && (
+              <button
+                type="button"
+                onClick={() => setShowDeletePrompt(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-rose-300 hover:text-white transition-colors cursor-pointer"
+                title="Delete Order"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Delete</span>
+              </button>
+            )}
+            <button
+              type="button"
               onClick={onClose}
-              className="rounded-lg p-1 text-slate-300 hover:bg-navy-800 hover:text-white transition-colors"
+              className="rounded-lg p-1 text-slate-300 hover:bg-navy-800 hover:text-white transition-colors ml-1"
             >
               <X className="h-5 w-5" />
             </button>
@@ -408,9 +462,39 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                   Cancel Order & Restore Stock
                 </button>
               )}
+              {onDeleteOrder && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePrompt(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-300 bg-white px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors shadow-sm"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Order</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handlePrintSlip}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                title="Print Thermal / POS Slip Receipt"
+              >
+                <Printer className="h-3.5 w-3.5 text-slate-500" />
+                <span>Print Slip</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintInvoice}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-navy-900 hover:bg-slate-50 transition-colors shadow-sm"
+                title="Print Full Official A4 Tax / Wholesale Invoice"
+              >
+                <FileText className="h-3.5 w-3.5 text-brand-500" />
+                <span>Print Invoice</span>
+              </button>
+
               {onGenerateInvoice && (
                 <button
                   type="button"
@@ -441,6 +525,42 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Delete Order Confirmation Modal */}
+        {showDeletePrompt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/80 p-4 backdrop-blur-sm animate-in fade-in">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-100 text-rose-600 mb-3">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <h3 className="text-base font-bold text-navy-900">Delete Order #{order.orderNumber}?</h3>
+              <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+                Are you sure you want to permanently delete order <strong>#{order.orderNumber}</strong>?
+                This will safely remove the order and its linked invoices from local storage and cloud database.
+                This action cannot be undone.
+              </p>
+
+              <div className="mt-5 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePrompt(false)}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  Keep Order
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 transition-colors shadow-md shadow-rose-600/30"
+                >
+                  {isDeleting ? 'Deleting...' : 'Yes, Delete Order'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Cancel Order Confirmation Modal */}
         {showCancelPrompt && (

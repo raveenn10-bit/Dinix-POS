@@ -393,25 +393,46 @@ export function printOrderReceipt(
  * Print standard A4 Tax / Wholesale Invoice using a hidden isolated iframe.
  */
 export function printA4InvoiceDocument(
-  invoice: Invoice,
+  target: Invoice | Order,
   options?: { title?: string; onComplete?: () => void; onError?: (err: unknown) => void }
 ): void {
   try {
-    const isWholesale = invoice.invoiceType === 'wholesale';
-    const createdAt = invoice.createdAt ? new Date(invoice.createdAt) : new Date();
+    const isInvoice = 'invoiceNumber' in target && !('orderStatus' in target);
+    const invoiceNumber = isInvoice
+      ? (target as Invoice).invoiceNumber
+      : ((target as any).invoiceId || `INV-${(target as Order).orderNumber.replace(/^ORD-/, '')}`);
+    const orderNumber = isInvoice ? (target as Invoice).orderNumber : (target as Order).orderNumber;
+    const isWholesale =
+      ('invoiceType' in target && (target as Invoice).invoiceType === 'wholesale') ||
+      ('orderType' in target && (target as Order).orderType === 'wholesale');
+    const createdAt = target.createdAt ? new Date(target.createdAt) : new Date();
     const dateFormatted = createdAt.toLocaleDateString('en-GB', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     });
 
-    const items = invoice.items || [];
-    const subtotal = invoice.subtotal || 0;
-    const discount = invoice.discount || 0;
-    const deliveryFee = invoice.deliveryFee || 0;
-    const total = invoice.total || 0;
-    const paidAmount = invoice.paidAmount || (invoice.paymentStatus === 'paid' ? total : 0);
+    const customerSnapshot = isInvoice
+      ? (target as Invoice).customerSnapshot
+      : {
+          name: (target as Order).customerName || 'Customer',
+          phone: (target as Order).customerPhone || '',
+          address: (target as Order).customerAddress || '',
+          city: '',
+        };
+
+    const items = target.items || [];
+    const subtotal = target.subtotal || 0;
+    const discount = target.discount || 0;
+    const deliveryFee = target.deliveryFee || 0;
+    const total = target.total || 0;
+    const paidAmount = ('paidAmount' in target ? Number((target as any).paidAmount) : 0) || (target.paymentStatus === 'paid' ? total : 0);
     const balanceDue = Math.max(0, total - paidAmount);
+    const paymentStatus = target.paymentStatus || 'unpaid';
+    const paymentMethod = target.paymentMethod || 'cash';
+    const dueDate = (target as any).dueDate;
+    const notes = (target as any).notes || '';
+    const createdBy = target.createdBy || 'Danix POS';
 
     const itemsHtml = items
       .map(
@@ -440,7 +461,7 @@ export function printA4InvoiceDocument(
       <html>
         <head>
           <meta charset="utf-8">
-          <title>${escapeHtml(options?.title || `Invoice - ${invoice.invoiceNumber}`)}</title>
+          <title>${escapeHtml(options?.title || `Invoice - ${invoiceNumber}`)}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -561,10 +582,10 @@ export function printA4InvoiceDocument(
                     ${isWholesale ? 'COMMERCIAL WHOLESALE INVOICE' : 'RETAIL TAX INVOICE'}
                   </div>
                   <div style="margin-top: 8px; font-size: 12px;">
-                    <div><strong>Invoice No:</strong> <span style="font-family: monospace; font-size: 13px; font-weight: 700;">${escapeHtml(invoice.invoiceNumber)}</span></div>
-                    ${invoice.orderNumber ? `<div><strong>Order Ref:</strong> <span style="font-family: monospace;">${escapeHtml(invoice.orderNumber)}</span></div>` : ''}
+                    <div><strong>Invoice No:</strong> <span style="font-family: monospace; font-size: 13px; font-weight: 700;">${escapeHtml(invoiceNumber)}</span></div>
+                    ${orderNumber ? `<div><strong>Order Ref:</strong> <span style="font-family: monospace;">${escapeHtml(orderNumber)}</span></div>` : ''}
                     <div><strong>Date:</strong> ${dateFormatted}</div>
-                    <div><strong>Status:</strong> <span style="font-weight: 700; color: ${invoice.paymentStatus === 'paid' ? '#059669' : '#e11d48'}; text-transform: uppercase;">${invoice.paymentStatus}</span></div>
+                    <div><strong>Status:</strong> <span style="font-weight: 700; color: ${paymentStatus === 'paid' ? '#059669' : '#e11d48'}; text-transform: uppercase;">${paymentStatus}</span></div>
                   </div>
                 </td>
               </tr>
@@ -573,18 +594,18 @@ export function printA4InvoiceDocument(
             <div class="info-grid">
               <div class="box">
                 <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Bill To / Customer</div>
-                <div style="font-size: 13px; font-weight: 800; color: #0b2545;">${escapeHtml(invoice.customerSnapshot.name)}</div>
-                <div style="margin-top: 2px;">Phone: <strong>${escapeHtml(invoice.customerSnapshot.phone)}</strong></div>
-                ${invoice.customerSnapshot.address ? `<div>Address: ${escapeHtml(invoice.customerSnapshot.address)}</div>` : ''}
-                ${invoice.customerSnapshot.city ? `<div>City: ${escapeHtml(invoice.customerSnapshot.city)}</div>` : ''}
+                <div style="font-size: 13px; font-weight: 800; color: #0b2545;">${escapeHtml(customerSnapshot.name)}</div>
+                <div style="margin-top: 2px;">Phone: <strong>${escapeHtml(customerSnapshot.phone)}</strong></div>
+                ${customerSnapshot.address ? `<div>Address: ${escapeHtml(customerSnapshot.address)}</div>` : ''}
+                ${customerSnapshot.city ? `<div>City: ${escapeHtml(customerSnapshot.city)}</div>` : ''}
               </div>
 
               <div class="box">
                 <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Payment & Delivery</div>
-                <div>Payment Method: <strong>${escapeHtml((invoice.paymentMethod || 'cash').toUpperCase())}</strong></div>
-                <div>Payment Status: <strong>${escapeHtml(invoice.paymentStatus.toUpperCase())}</strong></div>
-                ${invoice.dueDate ? `<div>Due Date: <strong>${new Date(invoice.dueDate).toLocaleDateString('en-GB')}</strong></div>` : ''}
-                <div>Issued By: <strong>${escapeHtml(invoice.createdBy || 'Danix POS')}</strong></div>
+                <div>Payment Method: <strong>${escapeHtml(paymentMethod.toUpperCase())}</strong></div>
+                <div>Payment Status: <strong>${escapeHtml(paymentStatus.toUpperCase())}</strong></div>
+                ${dueDate ? `<div>Due Date: <strong>${new Date(dueDate).toLocaleDateString('en-GB')}</strong></div>` : ''}
+                <div>Issued By: <strong>${escapeHtml(createdBy)}</strong></div>
               </div>
             </div>
 
@@ -640,9 +661,9 @@ export function printA4InvoiceDocument(
             </table>
 
             ${
-              invoice.notes
+              notes
                 ? `<div style="margin-top: 14px; padding: 8px 10px; background: #f8fafc; border-left: 3px solid #f36f21; font-size: 11px;">
-                    <strong>Invoice Notes:</strong> ${escapeHtml(invoice.notes)}
+                    <strong>Invoice Notes:</strong> ${escapeHtml(notes)}
                   </div>`
                 : ''
             }
