@@ -60,6 +60,39 @@ const STORAGE_KEYS = {
   DELIVERIES: 'danix_mock_deliveries',
 };
 
+const DELETED_CATEGORIES_KEY = 'danix_deleted_categories';
+export function getDeletedCategoryIds(): Set<string> {
+  try {
+    if (typeof window === 'undefined') return new Set();
+    const raw = localStorage.getItem(DELETED_CATEGORIES_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+export function addDeletedCategoryId(id: string): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const ids = getDeletedCategoryIds();
+    ids.add(id);
+    localStorage.setItem(DELETED_CATEGORIES_KEY, JSON.stringify(Array.from(ids)));
+  } catch {}
+}
+export function removeDeletedCategoryId(id: string): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const ids = getDeletedCategoryIds();
+    ids.delete(id);
+    localStorage.setItem(DELETED_CATEGORIES_KEY, JSON.stringify(Array.from(ids)));
+  } catch {}
+}
+export function clearDeletedCategoryIds(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(DELETED_CATEGORIES_KEY);
+  } catch {}
+}
+
 // Initialize Local Storage demo data if missing
 export function initDemoStorage(): void {
   if (typeof window === 'undefined') return;
@@ -67,8 +100,11 @@ export function initDemoStorage(): void {
   if (!localStorage.getItem(STORAGE_KEYS.PRODUCTS)) {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
   }
-  if (!localStorage.getItem(STORAGE_KEYS.CATEGORIES)) {
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_PREDEFINED_CATEGORIES));
+  if (!localStorage.getItem('danix_categories_seeded')) {
+    if (!localStorage.getItem(STORAGE_KEYS.CATEGORIES)) {
+      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_PREDEFINED_CATEGORIES));
+    }
+    localStorage.setItem('danix_categories_seeded', 'true');
   }
   if (!localStorage.getItem(STORAGE_KEYS.CUSTOMERS)) {
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(INITIAL_CUSTOMERS));
@@ -213,17 +249,13 @@ const productsStore = new LiveCollectionManager<Product>(
 const categoriesStore = new LiveCollectionManager<ProductCategory>(
   categoriesCol,
   (docs) => {
-    const list = docs.map((d) => ({ ...d.data(), id: d.id } as ProductCategory));
-    const existingMap = new Map(list.map((c) => [c.id, c]));
-    for (const pre of DEFAULT_PREDEFINED_CATEGORIES) {
-      if (!existingMap.has(pre.id) && !list.some((c) => c.name.toLowerCase() === pre.name.toLowerCase())) {
-        list.push(pre);
-      }
-    }
-    return list;
+    const deletedIds = getDeletedCategoryIds();
+    return docs
+      .map((d) => ({ ...d.data(), id: d.id } as ProductCategory))
+      .filter((c) => !deletedIds.has(c.id));
   },
   STORAGE_KEYS.CATEGORIES,
-  DEFAULT_PREDEFINED_CATEGORIES
+  []
 );
 
 const customersStore = new LiveCollectionManager<Customer>(
@@ -434,9 +466,11 @@ export function useCategories() {
   const [categories, setCategories] = useState<ProductCategory[]>(() => {
     initDemoStorage();
     if (categoriesStore.getLive() !== null) return categoriesStore.getLive()!;
-    if (typeof window === 'undefined') return DEFAULT_PREDEFINED_CATEGORIES;
+    if (typeof window === 'undefined') return [];
     const stored = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
-    return stored ? JSON.parse(stored) : DEFAULT_PREDEFINED_CATEGORIES;
+    const parsed: ProductCategory[] = stored ? JSON.parse(stored) : [];
+    const deletedIds = getDeletedCategoryIds();
+    return parsed.filter((c) => !deletedIds.has(c.id));
   });
   const [loading, setLoading] = useState<boolean>(categoriesStore.getLive() === null);
   const [error, setError] = useState<string | null>(null);
@@ -445,7 +479,9 @@ export function useCategories() {
     initDemoStorage();
     if (!isFirebaseConfigured) {
       const stored = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
-      setCategories(stored ? JSON.parse(stored) : DEFAULT_PREDEFINED_CATEGORIES);
+      const parsed: ProductCategory[] = stored ? JSON.parse(stored) : [];
+      const deletedIds = getDeletedCategoryIds();
+      setCategories(parsed.filter((c) => !deletedIds.has(c.id)));
       setLoading(false);
       return;
     }
@@ -503,6 +539,7 @@ export function useCategories() {
     }
 
     const id = categoryData.id || `cat-${now}-${Math.random().toString(36).substring(2, 6)}`;
+    removeDeletedCategoryId(id);
     const saved: ProductCategory = {
       ...categoryData,
       id,
@@ -612,6 +649,8 @@ export function useCategories() {
         `Cannot delete "${target.name}" because ${assignedCount} product(s) are currently assigned to this category. Please reassign or delete those products first.`
       );
     }
+
+    addDeletedCategoryId(id);
 
     const updated = categories.filter((c) => c.id !== id);
     localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
@@ -1267,6 +1306,8 @@ export async function clearAllOrders(
 export async function resetDemoData(
   user: { uid: string; name: string } = { uid: 'user', name: 'Danix Operator' }
 ): Promise<void> {
+  clearDeletedCategoryIds();
+
   // 1. Reset localStorage keys
   localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
   localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(DEFAULT_PREDEFINED_CATEGORIES));

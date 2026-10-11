@@ -13,7 +13,6 @@ import { Product, ProductCategory } from '@/types';
 import { uploadProductImage } from '@/lib/firebase/storage';
 import { useNotification } from '@/context/NotificationContext';
 import {
-  DEFAULT_PREDEFINED_CATEGORIES,
   peekNextCategorySku,
   sanitizeSkuPrefix,
 } from '@/lib/firebase/firestore';
@@ -40,11 +39,11 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   // Active categories list (preserves existing product category even if inactive)
   const availableCategories = React.useMemo(() => {
-    const list = categories && categories.length > 0 ? categories : DEFAULT_PREDEFINED_CATEGORIES;
+    const list = categories || [];
     return list.filter((c) => c.active || (product && c.name === product.category));
   }, [categories, product]);
 
-  const defaultCategory = product?.category || availableCategories[0]?.name || 'Ceylon Tea';
+  const defaultCategory = product?.category || availableCategories[0]?.name || '';
 
   const [name, setName] = useState(product?.name || '');
   const [category, setCategory] = useState(defaultCategory);
@@ -53,7 +52,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const initialSku = React.useMemo(() => {
     if (product?.sku) return product.sku;
     const catObj = availableCategories.find((c) => c.name === defaultCategory);
-    const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(defaultCategory);
+    const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(defaultCategory || 'DAN');
     return peekNextCategorySku(prefix, existingProducts);
   }, [product, defaultCategory, availableCategories, existingProducts]);
 
@@ -86,8 +85,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   // Auto-generate SKU helper based on selected category prefix
   const handleGenerateSku = () => {
-    const catObj = availableCategories.find((c) => c.name === category);
-    const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(category);
+    const activeCat = category || defaultCategory;
+    const catObj = availableCategories.find((c) => c.name === activeCat);
+    const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(activeCat || 'DAN');
     const generated = peekNextCategorySku(prefix, existingProducts);
     setSku(generated);
     if (!barcode) {
@@ -100,7 +100,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     setCategory(newCat);
     if (!isEditing) {
       const catObj = availableCategories.find((c) => c.name === newCat);
-      const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(newCat);
+      const prefix = catObj?.skuPrefix || sanitizeSkuPrefix(newCat || 'DAN');
       const autoSku = peekNextCategorySku(prefix, existingProducts);
       setSku(autoSku);
     }

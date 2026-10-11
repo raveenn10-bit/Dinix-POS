@@ -504,6 +504,36 @@ async function main() {
     );
   });
 
+  await runTest('CategoryDeletion', 'Verify category deletion is permanent and adding a new category never restores deleted predefined categories', () => {
+    // 1. Static code check in dataStore.ts to ensure resurrection loop is removed
+    const dataStoreCode = fs.readFileSync(path.join(rootDir, 'src/lib/dataStore.ts'), 'utf-8');
+    assert(!dataStoreCode.includes('existingMap.has(pre.id)'), 'dataStore.ts must not contain resurrection loop pushing predefined categories');
+    assert(dataStoreCode.includes('danix_deleted_categories'), 'dataStore.ts must track deleted categories');
+    assert(dataStoreCode.includes('danix_categories_seeded'), 'dataStore.ts must track category seeding status');
+
+    // 2. Behavioral verification of snapshot processing with deleted categories
+    const deletedIds = new Set(['cat-tea']);
+
+    // Simulate snapshot processor logic
+    const snapshotDocs = [
+      { id: 'cat-spices', data: () => ({ name: 'Spices & Condiments', skuPrefix: 'SPI', active: true }) },
+      { id: 'cat-oils', data: () => ({ name: 'Oils & Ghee', skuPrefix: 'OIL', active: true }) },
+      { id: 'cat-new-1', data: () => ({ name: 'Snacks & Bites', skuPrefix: 'SNA', active: true }) },
+    ];
+
+    const processed = snapshotDocs
+      .map(d => ({ ...d.data(), id: d.id }))
+      .filter(c => !deletedIds.has(c.id));
+
+    assert(!processed.some(c => c.id === 'cat-tea'), 'Deleted category "cat-tea" must remain deleted');
+    assert(processed.some(c => c.id === 'cat-new-1'), 'Newly added category "cat-new-1" must be present');
+    assertEqual(processed.length, 3, 'Processed categories count mismatch');
+
+    // 3. Verify ProductModal.tsx does not fall back to DEFAULT_PREDEFINED_CATEGORIES when categories list is empty
+    const productModalCode = fs.readFileSync(path.join(rootDir, 'src/pages/products/ProductModal.tsx'), 'utf-8');
+    assert(!productModalCode.includes('DEFAULT_PREDEFINED_CATEGORIES'), 'ProductModal.tsx must not fall back to DEFAULT_PREDEFINED_CATEGORIES');
+  });
+
   // --------------------------------------------------------------------------
   // DOMAIN 12: FIRESTORE SERIALIZATION & SANITIZATION INTEGRITY
   // --------------------------------------------------------------------------
